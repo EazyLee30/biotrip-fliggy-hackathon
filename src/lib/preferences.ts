@@ -15,6 +15,8 @@ import type { JourneyDraft, JourneyFeedbackInput } from "@/lib/journey-types";
 
 export const PREFERENCE_KINDS = [
   "rhythm",
+  "pace",
+  "guardrail",
   "ambience",
   "intention",
   "tone",
@@ -70,8 +72,17 @@ const SCHEDULE_LABELS: Record<string, string> = {
   slow_when_tired: "自觉疲惫时倾向放慢节奏",
 };
 
+const PACE_LABELS: Record<string, string> = {
+  gentle: "轻松为主", balanced: "均衡", active: "充分探索",
+};
+const GUARDRAIL_LABELS: Record<string, string> = {
+  morningLight: "晨间见光", protectReservations: "保护已订安排", sensoryBreaks: "规律停顿",
+};
+
 export const PREFERENCE_LABELS: Record<PreferenceKind, Record<string, string>> = {
   rhythm: RHYTHM_LABELS,
+  pace: PACE_LABELS,
+  guardrail: GUARDRAIL_LABELS,
   ambience: {},
   intention: INTENTION_LABELS,
   tone: TONE_LABELS,
@@ -127,6 +138,10 @@ function addSignals(signals: Signal[], kind: PreferenceKind, values: Iterable<un
 export function signalsFromDraft(draft: JourneyDraft, source: PreferenceSource = "choice"): Signal[] {
   const signals: Signal[] = [];
   if (draft.trip?.planningStyle) addSignals(signals, "rhythm", [draft.trip.planningStyle], source);
+  if (draft.trip?.paceLevel) addSignals(signals, "pace", [draft.trip.paceLevel], source);
+  for (const [key, enabled] of Object.entries(draft.trip?.guardrails ?? {})) {
+    if (enabled === true) addSignals(signals, "guardrail", [key], source);
+  }
   addSignals(signals, "ambience", draft.ambientPreferences ?? [], source);
   if (draft.intention) addSignals(signals, "intention", [draft.intention], source);
   if (draft.colorTone && draft.colorTone !== "未指定") addSignals(signals, "tone", [draft.colorTone], source);

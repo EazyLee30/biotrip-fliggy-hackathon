@@ -12,6 +12,8 @@ import styles from "../../zen-dashboard.module.css";
 
 const KIND_LABELS: Record<PreferenceKind, string> = {
   rhythm: "安排方式",
+  pace: "每日密度",
+  guardrail: "旅途守护",
   intention: "旅行意图",
   ambience: "空间氛围",
   tone: "个人色调",
@@ -22,7 +24,7 @@ const KIND_LABELS: Record<PreferenceKind, string> = {
 };
 
 const KIND_ORDER: PreferenceKind[] = [
-  "rhythm", "intention", "ambience", "tone", "service", "food", "destination", "schedule",
+  "rhythm", "pace", "guardrail", "intention", "ambience", "tone", "service", "food", "destination", "schedule",
 ];
 
 const SOURCE_LABELS = { choice: "来自你的选择", feedback: "来自你的反馈", profile: "来自你的档案" } as const;

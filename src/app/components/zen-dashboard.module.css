@@ -317,3 +317,70 @@
 }
 .breathPanel > * { max-width: none; }
 .breathHint { display: flex; align-items: center; gap: 6px; color: #6d7a72; font-size: 12px; }
+
+/* --- Pacing matrix ------------------------------------------------------- */
+.paceGrid { display: grid; gap: 10px; }
+@media (min-width: 700px) { .paceGrid { grid-template-columns: repeat(3, 1fr); } }
+.paceCard {
+  display: flex; flex-direction: column; gap: 4px; padding: 14px;
+  border: 1px solid #d3daef; border-radius: 18px; background: #fff;
+  color: var(--z-ink); font: inherit; text-align: left; cursor: pointer;
+}
+.paceCard:hover:not(:disabled), .paceCard:focus-visible { border-color: var(--z-green); outline: none; }
+.paceCard.selected { border-color: var(--z-green); background: #99efe53d; }
+.paceTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.paceTop strong { font-size: 15px; font-weight: 600; }
+.paceTop svg { color: var(--z-green); }
+.paceCard > small { color: var(--z-muted); font-size: 11px; }
+.paceSteps { font-size: 13px; font-weight: 550; color: var(--z-green); font-variant-numeric: tabular-nums; }
+.paceShape { color: #3d4a42; font-size: 12px; line-height: 1.5; }
+.paceHint { display: flex; align-items: center; gap: 5px; margin-top: 4px; color: #006a63; font-size: 11px; }
+
+/* --- Guardrails ---------------------------------------------------------- */
+.guardrailList { display: flex; flex-direction: column; gap: 8px; }
+.guardrail {
+  display: flex; align-items: center; gap: 12px; padding: 13px 14px;
+  border-radius: 16px; background: var(--z-inset); cursor: pointer;
+}
+.guardrailIcon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #fff; color: var(--z-green); flex: 0 0 auto; }
+.guardrailText { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.guardrailText strong { font-size: 14px; font-weight: 550; }
+.guardrailText small { color: #6d7a72; font-size: 11px; line-height: 1.5; }
+.guardrail input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: 0 0 auto;
+  width: 44px; height: 26px; border-radius: 999px; background: #d3daef;
+  position: relative; cursor: pointer; transition: background .18s ease; min-height: 0; padding: 0;
+}
+.guardrail input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: #fff; transition: transform .18s ease;
+}
+.guardrail input[type="checkbox"]:checked { background: var(--z-green); }
+.guardrail input[type="checkbox"]:checked::after { transform: translateX(18px); }
+
+/* --- Place detail -------------------------------------------------------- */
+.placeDetail { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+.placeDetailHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.placeDetail h2 { font-size: 21px; }
+.placeDetailMeta { color: var(--z-muted); font-size: 12px; margin-top: -6px; }
+.placeDetailReason { line-height: 1.65; }
+.slotRow { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; overscroll-behavior-x: contain; }
+.slot {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 82px; padding: 10px 12px; border: 1px solid #d3daef; border-radius: 14px;
+  background: #fff; color: var(--z-ink); font: inherit; cursor: pointer;
+}
+.slot strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.slot small { color: var(--z-muted); font-size: 10px; }
+.slot.active { border-color: var(--z-green); background: #99efe54d; }
+.slot.active strong { color: var(--z-green); }
+
+/* --- Day review ---------------------------------------------------------- */
+.dayList { display: flex; flex-direction: column; gap: 10px; }
+.dayRow { display: flex; gap: 12px; padding: 12px; border-radius: 16px; background: var(--z-inset); }
+.dayMarker { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 42px; color: var(--z-green); }
+.dayMarker strong { font-size: 15px; font-weight: 650; }
+.dayMarker small { color: var(--z-muted); font-size: 10px; }
+.dayBody { min-width: 0; flex: 1; }
+.dayBody h3 { font-size: 15px; margin-bottom: 3px; }
+.dayBody p { font-size: 12px; line-height: 1.55; color: #3d4a42; }

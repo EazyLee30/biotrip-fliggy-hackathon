@@ -26,6 +26,8 @@ export type TripInput = {
   /** Last day of the trip, `YYYY-MM-DD`; empty means an open-ended trip. */
   returnDate: string;
   planningStyle: "flexible" | "structured";
+  paceLevel?: "gentle" | "balanced" | "active";
+  guardrails?: { morningLight: boolean; protectReservations: boolean; sensoryBreaks: boolean };
   itineraryText: string;
   requestedServices: string[];
   foodPreferences: string;
@@ -124,6 +126,14 @@ export function validateInput(value: unknown): PlannerInput | null {
   // A return date earlier than departure is a picker mistake, not a request to
   // invert the trip.
   if (trip.returnDate !== "" && String(trip.returnDate) < String(trip.departureDate)) return null;
+  const paceLevel = trip.paceLevel === undefined ? undefined : String(trip.paceLevel);
+  if (paceLevel !== undefined && !["gentle", "balanced", "active"].includes(paceLevel)) return null;
+  const rawGuardrails = trip.guardrails;
+  const guardrails = isRecord(rawGuardrails) ? {
+    morningLight: rawGuardrails.morningLight === true,
+    protectReservations: rawGuardrails.protectReservations === true,
+    sensoryBreaks: rawGuardrails.sensoryBreaks === true,
+  } : undefined;
   return {
     intention,
     colorTone,
@@ -142,6 +152,8 @@ export function validateInput(value: unknown): PlannerInput | null {
       destinationTimezone: trip.destinationTimezone,
       returnDate: trip.returnDate,
       planningStyle: trip.planningStyle as "flexible" | "structured",
+      ...(paceLevel ? { paceLevel: paceLevel as "gentle" | "balanced" | "active" } : {}),
+      ...(guardrails ? { guardrails } : {}),
       itineraryText: trip.itineraryText.trim(),
       requestedServices: requestedServices as string[],
       foodPreferences: trip.foodPreferences.trim(),

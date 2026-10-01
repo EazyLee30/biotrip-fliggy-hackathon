@@ -7,7 +7,7 @@ const ACCOUNT = "11111111-1111-1111-1111-111111111111";
 const OTHER = "22222222-2222-2222-2222-222222222222";
 const MIGRATIONS = [
   "0001_accounts.sql", "0002_password_auth.sql", "0003_journeys.sql",
-  "0004_whoop_connections.sql", "0005_learned_preferences.sql",
+  "0004_whoop_connections.sql", "0005_learned_preferences.sql", "0006_preference_kinds.sql",
 ];
 
 function storage() {
@@ -238,6 +238,26 @@ test("the hourly planning ceiling is enforced and a rejected attempt releases it
     // A rejected attempt must not leave the concurrency lease held.
     const next = await reservePlanning(OTHER, 600, database);
     await next.release();
+  } finally { sqlite.close(); }
+});
+
+test("widening the preference kinds keeps existing rows and allows the new ones", () => {
+  const { database, sqlite } = storage();
+  try {
+    // A row written under the old allowlist must survive the rebuild.
+    sqlite.prepare("INSERT INTO learned_preferences(id,account_id,kind,value,label,hits) VALUES(?,?,?,?,?,?)")
+      .run("legacy-1", ACCOUNT, "rhythm", "flexible", "留白探索", 2).run?.();
+    const { preferences } = (() => ({
+      preferences: loadModule("lib/preferences.ts", { "@/lib/auth": { getDatabase: () => database } }),
+    }))();
+    const existing = sqlite.prepare("SELECT kind, label, hits FROM learned_preferences WHERE id='legacy-1'").get();
+    assert.deepEqual({ kind: existing.kind, label: existing.label, hits: existing.hits }, {
+      kind: "rhythm", label: "留白探索", hits: 2,
+    });
+    assert.throws(() => sqlite.prepare("INSERT INTO learned_preferences(id,account_id,kind,value,label) VALUES(?,?,?,?,?)")
+      .run("bad", ACCOUNT, "nonsense", "x", "x"), /CHECK|constraint/i);
+    assert.ok(preferences.PREFERENCE_KINDS.includes("pace"));
+    assert.ok(preferences.PREFERENCE_KINDS.includes("guardrail"));
   } finally { sqlite.close(); }
 });
 

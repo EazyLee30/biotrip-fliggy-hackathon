@@ -7,6 +7,10 @@ import { journeyMachine } from "./planner/machine";
 import { ProvenanceBlock } from "./planner/blocks/provenance";
 import { PlacePicker } from "./planner/place-picker";
 import { DateRangePicker } from "./planner/date-range";
+import { PaceMatrix } from "./planner/blocks/pace-matrix";
+import { GuardrailToggles } from "./planner/blocks/guardrails";
+import { DayReview } from "./planner/blocks/day-review";
+import { PlaceDetail } from "./planner/blocks/place-detail";
 import { BreathingOverlay } from "./planner/breathing-overlay";
 import styles from "./zen-dashboard.module.css";
 
@@ -17,7 +21,7 @@ type PlanPayload = Partial<JourneyGeneratedPlan> & { journey?: Journey; error?: 
 type TravelProfile = { homeCity: string; travelStyle: "flexible" | "structured"; foodPreferences: string; sensoryPreferences: string[]; memoryNotes: string };
 type Place = JourneyGeneratedPlan["plan"]["places"][number];
 type ItineraryItem = JourneyGeneratedPlan["plan"]["itinerary"][number] & { date?: string };
-const EMPTY_TRIP: TripForm = { originCity: "", destinationCity: "", departureDate: "", departureTimezone: "Asia/Shanghai", destinationTimezone: "", returnDate: "", planningStyle: "flexible", itineraryText: "", requestedServices: ["hotels", "attractions", "transport", "local_food", "relaxation"], foodPreferences: "" };
+const EMPTY_TRIP: TripForm = { originCity: "", destinationCity: "", departureDate: "", departureTimezone: "Asia/Shanghai", destinationTimezone: "", returnDate: "", planningStyle: "flexible", paceLevel: "balanced", guardrails: { morningLight: false, protectReservations: true, sensoryBreaks: true }, itineraryText: "", requestedServices: ["hotels", "attractions", "transport", "local_food", "relaxation"], foodPreferences: "" };
 const SERVICES = [["flights", "航班"], ["hotels", "住宿"], ["attractions", "景点"], ["transport", "当地交通"], ["local_food", "当地餐食"], ["relaxation", "放松体验"], ["onsen", "温泉"], ["massage", "按摩"], ["travel_insurance", "旅行保险"], ["medical_info", "医疗信息"]] as const;
 const AMBIENCE = ["安静少噪", "自然气息", "柔和光线", "人少宽松"];
 const ZONES = [["Asia/Shanghai", "中国标准时间"], ["Asia/Tokyo", "日本标准时间"], ["Asia/Seoul", "韩国标准时间"], ["Asia/Hong_Kong", "香港时间"], ["Asia/Taipei", "台北时间"], ["Asia/Singapore", "新加坡时间"], ["Asia/Bangkok", "泰国时间"], ["Asia/Makassar", "巴厘岛时间"], ["Asia/Kolkata", "印度时间"], ["Europe/London", "英国时间"], ["Europe/Paris", "中欧时间"], ["America/New_York", "美国东部时间"], ["America/Los_Angeles", "美国西部时间"], ["Australia/Sydney", "悉尼时间"], ["Pacific/Auckland", "新西兰时间"]] as const;
@@ -225,7 +229,13 @@ export function PlannerDashboard() {
     setConsent(false);
   }
   /** Server day, so the date strip cannot disagree with the trip maths. */
-  const today = useMemo(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date(now ?? Date.now())), [now]);
+  // `now` is set during bootstrap and the wizard only renders once authReady, so
+// the strip never sees the empty fallback. Reading the clock during render
+// would be an impure call the compiler rightly rejects.
+const today = useMemo(
+  () => (now === null ? "" : new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date(now))),
+  [now],
+);
   const learnedOrigins = useMemo(() => learnedDefaults?.homeCities, [learnedDefaults]);
   function draftFor(approved = false): JourneyDraft { return { intention, colorTone, fatigue: fatigue ? Number(fatigue) : null, subjectiveStress: stress ? Number(stress) : null, ambientPreferences: ambient, bodyFeedback: bodyFeedback.trim(), moodFeedback: moodFeedback.trim(), profileMemoryNotes: includeMemory ? memoryText : "", consent: approved, trip: form }; }
   /** A new journey starts from defaults the traveller already proved they want. */
@@ -398,8 +408,59 @@ export function PlannerDashboard() {
             <div className={styles.inset}><Icon name="clock" /><p>你只需要选日期。具体时刻由 BioTrip 按常见行程估算，并会在行程里标明，之后随时可以调整。</p></div>
           </section>
         </div>
-      </> : null}{step === 2 ? <><div className={styles.pageIntro}><h1>调一调，<br />让旅程更合身。</h1><p>选择安排方式，连接身体记录，保护已经确定的预约，再开始生成。</p></div><div className={styles.wideGrid}><section className={styles.card}><div className={styles.sectionHead}><span><Icon name="tune" /><strong>旅行节奏</strong></span><Badge tone="muted">安排偏好</Badge></div><div className={styles.segmented}><button className={form.planningStyle === "structured" ? styles.active : ""} onClick={() => update("planningStyle", "structured")}>有序清晰</button><button className={form.planningStyle === "flexible" ? styles.active : ""} onClick={() => update("planningStyle", "flexible")}>留白探索</button></div><div className={styles.inset}><Icon name="leaf" /><p>{form.planningStyle === "structured" ? "时间块与衔接更清楚，让预约和交通有明确安排。" : "把活动安排得宽松一些，保留临场探索和休息的空间。"} 已有的固定安排会纳入规划。</p></div><label className={styles.field}>已确定的活动或预约<textarea maxLength={6000} rows={4} value={form.itineraryText} onChange={(event) => update("itineraryText", event.target.value)} placeholder={"09:00 | 美术馆预约 | 固定\n14:00 | 午餐 | 灵活"} /><small>每行：HH:mm | 活动名称 | 固定 / 灵活</small></label><div className={styles.sectionHead}><strong>舒服的空间</strong><small>可多选</small></div><div className={styles.chipRow}>{AMBIENCE.map((item) => <button className={`${styles.chip} ${ambient.includes(item) ? styles.active : ""}`} key={item} aria-pressed={ambient.includes(item)} onClick={() => setAmbient(toggle(ambient, item))}>{item}</button>)}</div><div className={styles.twoColumns}><label className={styles.field}>疲劳自评<select value={fatigue} onChange={(event) => setFatigue(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5{value === 1 ? " · 很轻" : value === 5 ? " · 明显" : ""}</option>)}</select></label><label className={styles.field}>压力自评<select value={stress} onChange={(event) => setStress(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5{value === 1 ? " · 很低" : value === 5 ? " · 很高" : ""}</option>)}</select></label></div><label className={styles.field}>身体或活动偏好<textarea maxLength={80} rows={2} value={bodyFeedback} onChange={(event) => setBodyFeedback(event.target.value)} placeholder="例如：希望少走路，每天下午安排一段休息" /></label></section><div className={styles.stack}><section className={styles.card}><div className={styles.sectionHead}><span><Icon name="sync" /><strong>连接身体节奏</strong></span><Badge tone={whoopConnected ? "mint" : "muted"}>{whoopConnected ? "已连接" : "可选"}</Badge></div><div className={styles.inset}><Icon name="pulse" /><div><strong>WHOOP</strong><p>{whoopConnected ? health ? `最近记录：恢复 ${number(health.recoveryScore)}% · 睡眠 ${sleepDuration(health.sleepMinutes)}` : "已连接，暂无最近同步的完整记录。" : "连接后可结合近期恢复、睡眠与活动记录。"}</p></div></div>{whoopConnected ? <label className={styles.checkLabel}><input type="checkbox" checked={includeWhoop} onChange={(event) => { setIncludeWhoop(event.target.checked); setConsent(false); }} /><span>本次规划使用 WHOOP 近期记录</span></label> : whoopConfigured ? <a className={styles.secondaryButton} href="/api/whoop/connect">连接 WHOOP ↗</a> : <p className={styles.note}>目前可使用主观自评与旅行偏好继续规划。</p>}<p className={styles.note}>未来旅程的身体状态仍会变化，抵达后可以重新规划。</p>{memoryText ? <label className={styles.checkLabel}><input type="checkbox" checked={includeMemory} onChange={(event) => { setIncludeMemory(event.target.checked); setConsent(false); }} /><span>使用我的旅行偏好与旅程记忆</span></label> : null}</section><section className={styles.card}><div className={styles.sectionHead}><span><Icon name="compass" /><strong>当地旅行服务</strong></span><Badge tone="mint">真实检索</Badge></div><div className={styles.serviceGrid}>{SERVICES.map(([value, label]) => <label className={styles.serviceOption} key={value}><input type="checkbox" checked={form.requestedServices.includes(value)} onChange={() => update("requestedServices", toggle(form.requestedServices, value))} />{label}</label>)}</div><label className={styles.field}>饮食喜好或限制<input maxLength={500} value={form.foodPreferences} onChange={(event) => update("foodPreferences", event.target.value)} placeholder="例如：素食、少辣、对花生过敏" /></label></section><Ambience image="sleep" label="给恢复留出空间" title="享受探索，也享受休息。" /></div></div><section className={styles.card}><div className={styles.sectionHead}><span><Icon name="shield" /><strong>本次资料确认</strong></span><Badge tone="green">由你决定</Badge></div>{renderConsent()}</section>{serviceReady === false ? <div className={styles.inset}><Icon name="clock" /><p>规划服务暂时未就绪。可先保存草稿；恢复后再生成。</p></div> : null}</> : null}
-      {step === 3 ? plan ? <><div className={styles.pageIntro}><div className={styles.sectionHead}><span className={styles.eyebrow}>旅程已经整理好了</span><Badge tone="mint"><Icon name="check" size={12} />已保存</Badge></div><h1>{plan.plan.headline}</h1><p>为{accountName || "你"}安排 · {INTENTS.find((item) => item.value === journey?.draft.intention)?.name || "自己的节奏"}</p></div><div className={styles.wideGrid}><section className={styles.card}><div className={styles.sectionHead}><span><Icon name="pulse" /><strong>这次规划的依据</strong></span><Badge tone="muted">真实资料</Badge></div><p>{plan.plan.summary}</p><div className={styles.summaryList}><div className={styles.summaryRow}><span>旅行路线</span><strong>{journey?.draft.trip?.originCity} → {journey?.draft.trip?.destinationCity}</strong></div><div className={styles.summaryRow}><span>时区变化</span><strong>{plan.timezone.shiftMinutes > 0 ? "+" : ""}{number(plan.timezone.shiftMinutes / 60, 1)} 小时</strong></div><div className={styles.summaryRow}><span>身体资料</span><strong>{plan.healthContext.basis === "whoop_recent" ? "WHOOP 近期记录" : plan.healthContext.basis === "self_report" ? "本次主观感受" : "旅行偏好"}</strong></div><div className={styles.summaryRow}><span>整理时间</span><strong>{dateLabel(plan.retrievedAt, true)}</strong></div></div><div className={styles.inset}><Icon name="leaf" /><p>{plan.plan.reason}</p></div>{plan.healthContext.provisional ? <p className={styles.note}>出发时的身体状态可能变化。抵达后更新感受，可以重新调整当天的安排。</p> : null}</section><section className={styles.card}><div className={styles.sectionHead}><span><Icon name="lock" /><strong>固定安排</strong></span><Badge tone="green">规划时保留</Badge></div>{plan.plan.itinerary.filter((item) => item.fixed).length ? plan.plan.itinerary.filter((item) => item.fixed).map((item, index) => <div className={styles.summaryRow} key={index}><span>{item.time}</span><strong>{item.name}</strong></div>) : <p className={styles.note}>本次没有填写固定预约，可以按自己的节奏灵活调整。</p>}<p className={styles.note}>“固定安排”来自你填写的日程；预订状态以供应商订单为准。</p><Ambience image="tea" label="从容旅行的小小约定" title="把休息也当作旅程的一部分。" /></section><section className={`${styles.card} ${styles.fullWidth}`}><div className={styles.sectionHead}><span><Icon name="calendar" /><strong>完整行程序列</strong></span><Badge tone="muted">{plan.plan.itinerary.length} 个节点</Badge></div>{renderDayTabs()}<Timeline items={dayItems} onSelect={setActivity} /></section></div>{renderPlanActions()}<button className={styles.secondaryButton} onClick={() => startAdjustment()}><Icon name="tune" />自定义时间或调整节奏</button></> : <div className={`${styles.card} ${styles.empty}`}><Icon name="calendar" /><h2>还差一步，行程就能生成。</h2><p>确认节奏与本次资料，再开始真实检索。</p><button className={styles.primaryButton} onClick={() => setStep(2)}>返回资料确认</button></div> : null}
+      </> : null}{step === 2 ? <>
+        <div className={styles.pageIntro}><h1>调一调，<br />让旅程更合身。</h1><p>选一个每天想走多少的距离，连接身体记录，剩下的交给 BioTrip。</p></div>
+        <div className={styles.wideGrid}>
+          <div className={styles.stack}>
+            <PaceMatrix value={form.paceLevel} disabled={loading || busy} onChange={(level) => { update("paceLevel", level); setConsent(false); }} />
+            <section className={styles.card}>
+              <div className={styles.sectionHead}><span><Icon name="tune" /><strong>安排方式</strong></span><Badge tone="muted">时间块密度</Badge></div>
+              <div className={styles.segmented}><button className={form.planningStyle === "structured" ? styles.active : ""} onClick={() => { update("planningStyle", "structured"); setConsent(false); }}>有序清晰</button><button className={form.planningStyle === "flexible" ? styles.active : ""} onClick={() => { update("planningStyle", "flexible"); setConsent(false); }}>留白探索</button></div>
+              <div className={styles.inset}><Icon name="leaf" /><p>{form.planningStyle === "structured" ? "时间块与衔接更清楚，让预约和交通有明确安排。" : "把活动安排得宽松一些，保留临场探索和休息的空间。"} 已有的固定安排会纳入规划。</p></div>
+              <label className={styles.field}>已确定的活动或预约<textarea maxLength={6000} rows={4} value={form.itineraryText} onChange={(event) => update("itineraryText", event.target.value)} placeholder={"09:00 | 美术馆预约 | 固定\n14:00 | 午餐 | 灵活"} /><small>每行：HH:mm | 活动名称 | 固定 / 灵活</small></label>
+              <div className={styles.sectionHead}><strong>舒服的空间</strong><small>可多选</small></div>
+              <div className={styles.chipRow}>{AMBIENCE.map((item) => <button className={`${styles.chip} ${ambient.includes(item) ? styles.active : ""}`} key={item} aria-pressed={ambient.includes(item)} onClick={() => setAmbient(toggle(ambient, item))}>{item}</button>)}</div>
+              <div className={styles.twoColumns}><label className={styles.field}>疲劳自评<select value={fatigue} onChange={(event) => setFatigue(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5{value === 1 ? " · 很轻" : value === 5 ? " · 明显" : ""}</option>)}</select></label><label className={styles.field}>压力自评<select value={stress} onChange={(event) => setStress(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5{value === 1 ? " · 很低" : value === 5 ? " · 很高" : ""}</option>)}</select></label></div>
+            </section>
+          </div>
+          <div className={styles.stack}>
+            <GuardrailToggles value={form.guardrails} disabled={loading || busy} onChange={(next) => { update("guardrails", next); setConsent(false); }} />
+            <section className={styles.card}>
+              <div className={styles.sectionHead}><span><Icon name="pulse" /><strong>连接身体节奏</strong></span><Badge tone={whoopConnected ? "mint" : "muted"}>{whoopConnected ? "已连接" : "可选"}</Badge></div>
+              <div className={styles.inset}><Icon name="pulse" /><div><strong>WHOOP</strong><p>{whoopConnected ? health ? `最近记录：恢复 ${number(health.recoveryScore)}% · 睡眠 ${sleepDuration(health.sleepMinutes)}` : "已连接，暂无最近同步的完整记录。" : "连接后可结合近期恢复、睡眠与活动记录。"}</p></div></div>
+              {whoopConnected ? <label className={styles.checkLabel}><input type="checkbox" checked={includeWhoop} onChange={(event) => { setIncludeWhoop(event.target.checked); setConsent(false); }} /><span>本次规划使用 WHOOP 近期记录</span></label> : whoopConfigured ? <a className={styles.secondaryButton} href="/api/whoop/connect">连接 WHOOP ↗</a> : <p className={styles.note}>目前可使用主观自评与旅行偏好继续规划。</p>}
+              <p className={styles.note}>未来旅程的身体状态仍会变化，抵达后可以重新规划。</p>
+              {memoryText ? <label className={styles.checkLabel}><input type="checkbox" checked={includeMemory} onChange={(event) => { setIncludeMemory(event.target.checked); setConsent(false); }} /><span>使用我的旅行偏好与旅程记忆</span></label> : null}
+            </section>
+            <section className={styles.card}>
+              <div className={styles.sectionHead}><span><Icon name="compass" /><strong>当地旅行服务</strong></span><Badge tone="mint">真实检索</Badge></div>
+              <div className={styles.serviceGrid}>{SERVICES.map(([value, label]) => <label className={styles.serviceOption} key={value}><input type="checkbox" checked={form.requestedServices.includes(value)} onChange={() => update("requestedServices", toggle(form.requestedServices, value))} />{label}</label>)}</div>
+              <label className={styles.field}>饮食喜好或限制<input maxLength={500} value={form.foodPreferences} onChange={(event) => update("foodPreferences", event.target.value)} placeholder="例如：素食、少辣、对花生过敏" /></label>
+            </section>
+            <Ambience image="sleep" label="给恢复留出空间" title="享受探索，也享受休息。" />
+          </div>
+        </div>
+        <section className={styles.card}>
+          <div className={styles.sectionHead}><span><Icon name="shield" /><strong>本次资料确认</strong></span><Badge tone="green">由你决定</Badge></div>
+          {renderConsent()}
+        </section>
+        {serviceReady === false ? <div className={styles.inset}><Icon name="clock" /><p>规划服务暂时未就绪。可先保存草稿；恢复后再生成。</p></div> : null}
+      </> : null}{step === 3 ? plan ? (
+        <DayReview
+          plan={plan}
+          startDate={form.departureDate || "行程"}
+          destination={form.destinationCity}
+          travelHours={plan.timezone.travelHours}
+          busy={loading || busy}
+          onEditPace={() => { setStep(2); setError(""); }}
+          onLaunch={() => { setConsent(false); setConsentOpen(true); }}
+        />
+      ) : (
+        <div className={styles.stack}>
+          <div className={styles.pageIntro}><h1>还差一点点。</h1><p>先补全目的地与日期，然后确认本次使用的资料，就能生成行程。</p></div>
+          <button className={styles.primaryButton} onClick={() => setStep(1)}><Icon name="arrow" />回到上一步补全</button>
+        </div>
+      ) : null}
     </div>;
   }
 
@@ -430,8 +491,24 @@ export function PlannerDashboard() {
     {deleteTarget ? <Modal title="删除这段旅程？" onClose={closeDelete} busy={busy}><p>“{deleteTarget.title}”的行程和关联体验记录将被删除。这个操作无法撤销。</p><button className={styles.primaryButton} style={{ background: "#b90538" }} disabled={busy} onClick={() => void removeJourney()}>{busy ? "正在删除…" : "确认删除旅程"}</button><button className={styles.secondaryButton} disabled={busy} onClick={closeDelete}>保留旅程</button></Modal> : null}
     {consentOpen ? <Modal title="确认这次规划" onClose={closeConsent}>{renderConsent()}</Modal> : null}
     {activity ? <Modal title={activity.name} onClose={closeActivity}><Badge tone={activity.fixed ? "green" : "muted"}><Icon name={activity.fixed ? "lock" : "clock"} size={14} />{activity.date ? `${activity.date} · ` : ""}{activity.time} · {activity.fixed ? "固定安排" : "可调整活动"}</Badge><p>{activity.detail}</p>{activity.fixed ? <div className={styles.inset}><Icon name="lock" /><p>规划时会保留你填写的固定安排，预订确认请以原始订单为准。</p></div> : null}<button className={styles.primaryButton} onClick={() => { setActivity(null); navigate("explore"); }}>查看当地体验与来源 <Icon name="arrow" /></button>{journey?.status !== "completed" ? <button className={styles.secondaryButton} onClick={() => { setActivity(null); startAdjustment(); }}>调整这段旅程的节奏</button> : null}</Modal> : null}
-    {place ? <Modal title="当地体验详情" onClose={closePlace}><div className={`${styles.placeCover} ${styles.placeDetailHero}`}><Badge><Icon name="shield" size={13} />真实来源</Badge><Icon name={activityIcon(place.name + place.category)} /><small>{place.category} · {place.source}</small></div><h2>{place.name}</h2><p>{place.reason}</p><div className={styles.inset}><Icon name="clock" /><p>价格、时间、可订状态与取消规则，请在供应商页面核对。页面不会显示未经检索确认的报价。</p></div><a className={styles.primaryButton} href={publicUrl(place.url)} target="_blank" rel="noopener noreferrer"><Icon name="compass" />打开{(/飞猪|fliggy|flyai/i.test(place.source + place.url) ? "飞猪" : "官方来源")}并查看预订 <Icon name="arrow" /></a><button className={styles.secondaryButton} onClick={() => { setBodyFeedback(`希望纳入${place.name}，安排充分休息，保留固定预约。`.slice(0, 80)); setPlace(null); startAdjustment(); }}>把这个体验纳入重新规划</button><p className={styles.note}>BioTrip 不会代你完成订单。购买后可将预约时间填写为固定安排。</p></Modal> : null}
-    {shareOpen ? <Modal title="分享这段旅程" onClose={closeShare} busy={busy}><p>创建公开链接后，任何获得链接的人都可查看目的地、旅程摘要与地点来源。链接不包含健康数据、个人档案或出行日期。</p>{sharePath ? <><a className={styles.inset} style={{ overflowWrap: "anywhere" }} href={sharePath} target="_blank" rel="noopener noreferrer">{typeof window !== "undefined" ? new URL(sharePath, window.location.origin).href : sharePath}</a><button className={styles.primaryButton} onClick={() => void copyShare()}><Icon name="share" />复制分享链接</button><p className={styles.note}>分享链接 90 天后到期，可以在“我的”中提前撤回。</p></> : <button className={styles.primaryButton} disabled={busy} onClick={() => void createShare()}>{busy ? "正在创建…" : "确认创建公开分享链接"}</button>}</Modal> : null}
-    {feedbackOpen ? <Modal title="记录这次旅行的感受" onClose={closeFeedback} busy={busy}><label className={styles.field}>这一刻，感觉怎么样？<textarea rows={4} maxLength={1000} value={feedbackNote} onChange={(event) => setFeedbackNote(event.target.value)} placeholder="例如：下午留出休息后，晚餐时更有精神。" /></label><div className={styles.twoColumns}><label className={styles.field}>疲劳自评<select value={fatigue} onChange={(event) => setFatigue(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5</option>)}</select></label><label className={styles.field}>压力自评<select value={stress} onChange={(event) => setStress(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5</option>)}</select></label></div><label className={styles.checkLabel}><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />下次旅行也记住一个偏好</label>{remember ? <label className={styles.field}>希望记住什么<textarea rows={2} maxLength={500} value={memoryNote} onChange={(event) => setMemoryNote(event.target.value)} placeholder="例如：长途抵达当天，午后安排至少一小时休息。" /></label> : null}<button className={styles.primaryButton} disabled={busy || (!feedbackNote.trim() && !fatigue && !stress) || (remember && !memoryNote.trim())} onClick={() => void sendFeedback()}>{busy ? "保存中…" : "保存这次感受"}</button></Modal> : null}
+    {place ? (
+        <Modal title="当地体验详情" onClose={closePlace}>
+          <PlaceDetail
+            place={place}
+            whoopConnected={whoopConnected}
+            busy={busy}
+            onClose={closePlace}
+            onAddToDay={(slot) => {
+              if (!slot) { setPlace(null); return; }
+              // The intent joins the traveller's own itinerary text, which the
+              // planner reads as a real item on the next generation.
+              const line = slot.time + " | " + slot.placeName + " | 灵活";
+              update("itineraryText", form.itineraryText ? form.itineraryText + "\n" + line : line);
+              setPlace(null);
+              setToast("已把「" + slot.placeName + " · " + slot.time + "」写进你的行程安排，可在节奏页调整。");
+            }}
+          />
+        </Modal>
+      ) : null}
   </main>;
 }

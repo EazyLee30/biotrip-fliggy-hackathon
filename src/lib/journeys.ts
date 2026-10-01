@@ -91,7 +91,7 @@ export function parseJourneyDraft(value: unknown): JourneyDraft {
   if (value.trip !== undefined) {
     if (!isRecord(value.trip)) invalid();
     const input = value.trip;
-    onlyKeys(input, ["originCity", "destinationCity", "departureDate", "departureTimezone", "destinationTimezone", "returnDate", "planningStyle", "itineraryText", "requestedServices", "foodPreferences"]);
+    onlyKeys(input, ["originCity", "destinationCity", "departureDate", "departureTimezone", "destinationTimezone", "returnDate", "planningStyle", "paceLevel", "guardrails", "itineraryText", "requestedServices", "foodPreferences"]);
     const trip: JourneyTripDraft = {};
     if (input.originCity !== undefined) trip.originCity = text(input.originCity, 100);
     if (input.destinationCity !== undefined) trip.destinationCity = text(input.destinationCity, 100);
@@ -100,6 +100,17 @@ export function parseJourneyDraft(value: unknown): JourneyDraft {
     if (input.destinationTimezone !== undefined) trip.destinationTimezone = timezone(input.destinationTimezone);
     if (input.returnDate !== undefined) trip.returnDate = date(input.returnDate, false);
     if (input.planningStyle !== undefined) trip.planningStyle = choice(input.planningStyle, new Set(["flexible", "structured"])) as "flexible" | "structured";
+    if (input.paceLevel !== undefined) trip.paceLevel = choice(input.paceLevel, new Set(["gentle", "balanced", "active"])) as JourneyTripDraft["paceLevel"];
+    if (input.guardrails !== undefined) {
+      if (!isRecord(input.guardrails)) invalid();
+      onlyKeys(input.guardrails, ["morningLight", "protectReservations", "sensoryBreaks"]);
+      if (Object.values(input.guardrails).some((value) => typeof value !== "boolean")) invalid();
+      trip.guardrails = {
+        morningLight: input.guardrails.morningLight === true,
+        protectReservations: input.guardrails.protectReservations === true,
+        sensoryBreaks: input.guardrails.sensoryBreaks === true,
+      };
+    }
     if (input.itineraryText !== undefined) trip.itineraryText = text(input.itineraryText, 6000);
     if (input.requestedServices !== undefined) trip.requestedServices = stringArray(input.requestedServices, SERVICE_TYPES, 10);
     if (input.foodPreferences !== undefined) trip.foodPreferences = text(input.foodPreferences, 500);

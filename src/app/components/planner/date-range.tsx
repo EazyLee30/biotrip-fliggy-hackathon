@@ -56,9 +56,12 @@ export function DateRangePicker({
   const [monthOffset, setMonthOffset] = useState(0);
   const [pending, setPending] = useState<string | null>(null);
 
-  const base = fromKey(today);
+  const base = useMemo(() => (today ? fromKey(today) : new Date()), [today]);
   const view = useMemo(() => new Date(base.getFullYear(), base.getMonth() + monthOffset, 1), [base, monthOffset]);
-  const strip = useMemo(() => Array.from({ length: 60 }, (_, index) => addDays(today, index)), [today]);
+  const strip = useMemo(
+    () => (today ? Array.from({ length: 60 }, (_, index) => addDays(today, index)) : []),
+    [today],
+  );
 
   /** First tap sets the start; the second completes the range and never inverts. */
   function pick(day: string) {

@@ -1,4 +1,5 @@
 import type { ComposedPlan, HealthInsight, LocalResearch, StageContext, FlyaiInventory } from "./contract";
+import type { TripInput } from "@/lib/planner-input";
 
 /**
  * Every instruction the agents receive, in one place.
@@ -63,6 +64,13 @@ export function localResearchPrompt(ctx: StageContext) {
   ].join("\n");
 }
 
+/** Daily density is a traveller-chosen target, never a measured or predicted limit. */
+const PACE_RULES: Record<NonNullable<TripInput["paceLevel"]>, string> = {
+  gentle: "轻松为主：每天少量步行，活动集中在短距离，每天 2-3 项，多安排坐下来的时间。",
+  balanced: "均衡：每天 3-5 项，步行与休息交替，单段步行不宜过长。",
+  active: "充分探索：每天 4-6 项，可安排较长步行与较多连续活动，但仍需保留休息。",
+};
+
 /**
  * compose_plan: receives only verified sources plus the traveller's own context.
  *
@@ -103,6 +111,7 @@ export function composePlanPrompt(
     ...sourceRules,
     `health_data_basis=${gathered.health?.basis ?? "preferences_only"}：只有 whoop_recent 才可说参考了 WHOOP 近期记录；self_report 是用户自评；preferences_only 不得推断身体状态。当前数据不是对未来身体状态的预测。`,
     `unavailable_search_categories=${JSON.stringify(unavailableCategories)}：这些类别必须明确提示用户自行确认，不得当作已核验推荐。`,
+    "用户为这段旅程开启了以下长期守护，必须逐条遵守：protectReservations=true 时绝不自动移动、改名或删除任何已给出的固定日程；morningLight=true 时在行程日安排一段清晨户外时间；sensoryBreaks=true 时每隔一段时间插入一段安静独处、不含新移动的停顿。这些都是用户的行程安排偏好，不是健康判断。",
     `本地时间与时差：${timing.travelHours} 小时旅程，位移 ${timing.timezoneShiftMinutes / 60} 小时。所有时间是用户选择的目的地当地时间，交通时间仅预留建议缓冲。`,
     `saved_travel_preferences 是用户自己确认过、允许本次使用的旅行记忆；${SAFETY_RULE}`,
     "返回字段 headline,summary,reason,adjustments:string[],itinerary:array,places:array。中文自然简洁，details 不超过 80 字，summary/reason 不超过 200 字。",
@@ -120,6 +129,8 @@ export function composePlanPrompt(
         sensory_filters: gathered.health?.sensoryFilters ?? input.preferences?.ambientPreferences ?? [],
       },
       desired_experience: input.preferences?.intention,
+      daily_pace: input.trip?.paceLevel ? PACE_RULES[input.trip.paceLevel] : PACE_RULES.balanced,
+      standing_guardrails: input.trip?.guardrails ?? null,
       personal_ambience: input.preferences?.colorTone,
       saved_travel_preferences: input.preferences?.savedMemory || null,
       service_search_results: gathered.local?.services ?? [],

@@ -1,5 +1,18 @@
 export type JourneyStatus = "draft" | "planned" | "active" | "completed";
 
+/** How much walking a day should carry. Chosen once, applied to every day. */
+export type PaceLevel = "gentle" | "balanced" | "active";
+
+/** Recurring protections the traveller can switch on once and forget. */
+export type Guardrails = {
+  /** Schedule outdoor light soon after waking on trip days. */
+  morningLight: boolean;
+  /** Never auto-shift an existing reservation. */
+  protectReservations: boolean;
+  /** Insert quiet pauses at a regular interval. */
+  sensoryBreaks: boolean;
+};
+
 export type JourneyTripDraft = {
   originCity?: string;
   destinationCity?: string;
@@ -9,6 +22,8 @@ export type JourneyTripDraft = {
   destinationTimezone?: string;
   returnDate?: string;
   planningStyle?: "flexible" | "structured";
+  paceLevel?: PaceLevel;
+  guardrails?: Guardrails;
   itineraryText?: string;
   requestedServices?: string[];
   foodPreferences?: string;
