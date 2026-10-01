@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { createHash, randomInt } from "node:crypto";
-import { getCurrentAccount, getDatabase, isSameOrigin } from "@/lib/auth";
+import { getCurrentAccount, isSameOrigin } from "@/lib/auth";
 import { JourneyError } from "@/lib/journeys";
 import { journeyFailure, readJourneyJson } from "@/lib/journey-http";
 import {
@@ -15,6 +14,7 @@ import { saveGeneratedJourney } from "@/lib/journeys";
 import type { JourneyGeneratedPlan } from "@/lib/journey-types";
 import { runPlanning } from "@/lib/planning/pipeline";
 import { STAGE_BY_NAME, PLAN_BUDGET_MS } from "@/lib/planning/stages";
+import { reservePlanning as reservePlanningLease } from "@/lib/planning/rate-limit";
 import type { TripTiming } from "@/lib/planning/contract";
 import { listLearnedPreferences, preferenceDefaults } from "@/lib/preferences";
 
@@ -30,33 +30,7 @@ function json(payload: unknown, status = 200) {
 
 /** One planning run per account, plus an hourly ceiling to bound provider cost. */
 async function reservePlanning(accountId: string, leaseSeconds: number) {
-  const database = getDatabase();
-  const now = Math.floor(Date.now() / 1000);
-  const key = createHash("sha256").update(`plan:active:${accountId}`).digest("hex");
-  const token = randomInt(1, 2147483647);
-  const lock = await database.prepare(`INSERT INTO auth_rate_limits (limit_key, hit_count, reset_at) VALUES (?, ?, ?)
-    ON CONFLICT(limit_key) DO UPDATE SET hit_count = excluded.hit_count, reset_at = excluded.reset_at
-    WHERE auth_rate_limits.reset_at <= ? RETURNING hit_count`)
-    .bind(key, token, now + leaseSeconds, now).first<{ hit_count: number }>();
-  if (!lock) {
-    throw new JourneyError(409, "PLANNING_IN_PROGRESS", "你的上一份规划仍在生成，请等待完成或取消后重试。");
-  }
-  const release = async () => {
-    await database.prepare("DELETE FROM auth_rate_limits WHERE limit_key = ? AND hit_count = ?")
-      .bind(key, token).run().catch(() => undefined);
-  };
-  try {
-    const rateKey = createHash("sha256").update(`plan:hour:${accountId}`).digest("hex");
-    const count = await database.prepare(`INSERT INTO auth_rate_limits (limit_key, hit_count, reset_at) VALUES (?, ?, 1, ?)
-      ON CONFLICT(limit_key) DO UPDATE SET
-        hit_count = CASE WHEN auth_rate_limits.reset_at <= ? THEN 1 ELSE auth_rate_limits.hit_count + 1 END,
-        reset_at = CASE WHEN auth_rate_limits.reset_at <= ? THEN excluded.reset_at ELSE auth_rate_limits.reset_at END
-      RETURNING hit_count`).bind(rateKey, now + 3600, now, now).first<{ hit_count: number }>();
-    if (!count || count.hit_count > 12) {
-      throw new JourneyError(429, "PLANNING_RATE_LIMIT", "本小时规划次数已达上限，请稍后再试。已保存的旅程可继续查看和调整。");
-    }
-    return release;
-  } catch (error) { await release(); throw error; }
+  return reservePlanningLease(accountId, leaseSeconds);
 }
 
 function resolveTiming(input: PlannerInput): TripTiming {
@@ -133,7 +107,6 @@ export async function POST(request: Request) {
   const fixedItems = parseSchedule(parsed.trip.itineraryText)?.filter((item) => item.fixed) ?? [];
   const { input, memory } = await memoryUsage(account.id, parsed);
   const requestId = crypto.randomUUID();
-  const release = await reservePlanning(account.id, Math.ceil(PLAN_BUDGET_MS / 1000) + 30);
 
   const controller = new AbortController();
   const disconnect = () => controller.abort(new DOMException("Client disconnected", "AbortError"));
@@ -142,6 +115,9 @@ export async function POST(request: Request) {
   const startedAt = Date.now();
 
   const execute = async (progress: (event: PlanProgress) => void) => {
+    // The lease is taken here, not before the response starts: a request that
+    // is already disconnected must not lock the account out for the lease window.
+    const lease = await reservePlanning(account.id, Math.ceil(PLAN_BUDGET_MS / 1000) + 30);
     try {
       const outcome = await runPlanning({
         accountId: account.id,
@@ -194,7 +170,7 @@ export async function POST(request: Request) {
       });
       return json({ ...generated, journey });
     } finally {
-      await release();
+      await lease.release();
     }
   };
 

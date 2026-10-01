@@ -164,6 +164,46 @@ test("in-trip fatigue teaches a slower default for later trips", async () => {
   } finally { sqlite.close(); }
 });
 
+/** Loads the real rate-limit module against an in-memory database. */
+function rateLimit(database) {
+  return loadModule("lib/planning/rate-limit.ts", {
+    "@/lib/auth": { getDatabase: () => database },
+    "@/lib/journeys": loadModule("lib/journeys.ts", {
+      "@/lib/auth": { getDatabase: () => database },
+      "@/lib/preferences": loadModule("lib/preferences.ts", { "@/lib/auth": { getDatabase: () => database } }),
+    }),
+  });
+}
+
+test("planning allows one concurrent run per account and releases its lease", async () => {
+  const { database, sqlite } = storage();
+  const { reservePlanning } = rateLimit(database);
+  try {
+    const lease = await reservePlanning(ACCOUNT, 600, database);
+    await assert.rejects(reservePlanning(ACCOUNT, 600, database), (error) => error.code === "PLANNING_IN_PROGRESS");
+    const other = await reservePlanning(OTHER, 600, database);
+    await other.release();
+    await lease.release();
+    const again = await reservePlanning(ACCOUNT, 600, database);
+    await again.release();
+  } finally { sqlite.close(); }
+});
+
+test("the hourly planning ceiling is enforced and a rejected attempt releases its lease", async () => {
+  const { database, sqlite } = storage();
+  const { reservePlanning, PLANNING_HOURLY_LIMIT } = rateLimit(database);
+  try {
+    for (let index = 0; index < PLANNING_HOURLY_LIMIT; index += 1) {
+      const lease = await reservePlanning(ACCOUNT, 600, database);
+      await lease.release();
+    }
+    await assert.rejects(reservePlanning(ACCOUNT, 600, database), (error) => error.code === "PLANNING_RATE_LIMIT");
+    // A rejected attempt must not leave the concurrency lease held.
+    const next = await reservePlanning(OTHER, 600, database);
+    await next.release();
+  } finally { sqlite.close(); }
+});
+
 test("verified accounts set one first password, then use passwords without more email codes", async () => {
   const { database, sqlite } = storage();
   const cookies = { get: () => undefined };

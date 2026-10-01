@@ -118,7 +118,7 @@ export function PlannerDashboard() {
   const [feedbackNote, setFeedbackNote] = useState("");
   const [remember, setRemember] = useState(false);
   const [memoryNote, setMemoryNote] = useState("");
-  const [feedbackHistory, setFeedbackHistory] = useState<JourneyFeedback[]>([]);
+  const [feedback, setFeedback] = useState<{ key: string; items: JourneyFeedback[] }>({ key: "", items: [] });
   const [previousPlan, setPreviousPlan] = useState<JourneyGeneratedPlan | null>(null);
   const [now, setNow] = useState<number | null>(null);
   const generation = useRef<AbortController | null>(null);
@@ -126,7 +126,7 @@ export function PlannerDashboard() {
   const plan = journey?.plan ?? null;
   // Lifecycle capabilities are derived once so every surface agrees on what is
   // possible right now, instead of re-deriving rules from status and planCurrent.
-  const planner = useMemo(() => ({ machine: journeyMachine(journey) }), [journey]);
+  const planner = { machine: journeyMachine(journey) };
   const memoryText = [profileMemory, ...memories.map((entry) => entry.note)].filter(Boolean).join("\n").slice(0, 5000);
   const readyToPlan = serviceReady === true;
 
@@ -189,11 +189,17 @@ export function PlannerDashboard() {
   }, [fillDraft]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 5000); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
-    if (!journey || !["active", "completed"].includes(journey.status)) { setFeedbackHistory([]); return; }
+    const current = journey;
+    if (!current || !["active", "completed"].includes(current.status)) return;
+    const journeyKey = `${current.id}:${current.version}`;
     let alive = true;
-    void jsonRequest<{ feedback: JourneyFeedback[] }>(`/api/journeys/${journey.id}/feedback`).then((value) => { if (alive) setFeedbackHistory(value.feedback); }).catch(() => undefined);
+    void jsonRequest<{ feedback: JourneyFeedback[] }>(`/api/journeys/${current.id}/feedback`).then((value) => { if (alive) setFeedback({ key: journeyKey, items: value.feedback }); }).catch(() => undefined);
     return () => { alive = false; };
   }, [journey?.id, journey?.version, journey?.status]);
+  // Feedback belongs to a specific journey version, so a stale list is simply
+  // not shown rather than being cleared with an extra render.
+  const feedbackKey = journey && ["active", "completed"].includes(journey.status) ? `${journey.id}:${journey.version}` : "";
+  const feedbackHistory = feedback.key === feedbackKey ? feedback.items : [];
 
   const itineraryDays = useMemo(() => {
     const grouped = new Map<string, ItineraryItem[]>();

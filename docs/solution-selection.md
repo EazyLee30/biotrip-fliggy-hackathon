@@ -25,7 +25,7 @@ BioTrip 不是再生成一份完整攻略，而是把 WHOOP 身体状态、旅�
 | --- | --- | --- |
 | 产品 UI | Next.js App Router + TypeScript，手机优先响应式 PWA | 单一网页产品；安全区、触控尺寸、manifest/图标和缓存壳都纳入验收 |
 | 应用 API | Next.js 服务端 Route Handlers | 浏览器只访问同源 API；客户端拿不到 WHOOP/百炼/FlyAI 凭证 |
-| WHOOP | OAuth 2.0 + 服务端 WHOOP v2 API 客户端 | 用户授权后按当前行程按需取最新周期和最近 7 天；不请求 `read:profile` |
+| WHOOP | OAuth 2.0 + 服务端 WHOOP v2 API 客户端 | 用户授权后按当前行程按需取最新周期和最近 7 天；`read:profile` 仅用于显示连接的是哪个 WHOOP 账号，不进入任何智能体 |
 | 百炼 Agent | 三个 Managed Agent + Session/Event API + SSE | 无工具解读 Agent 接收 WHOOP/主观反馈；当地信息 Agent 只收城市与服务偏好；带 FlyAI Skill 的旅行 Agent 只拿旅行条件 |
 | 飞猪能力 | 百炼中安装官方 `alibaba-flyai/flyai-skill`，在 Managed Agent 环境安全配置 FlyAI API Key | 遵循比赛指定接入链路；真实搜索由 Agent 使用 Skill，前端和 WHOOP OAuth 服务端均不保存 FlyAI 凭证 |
 | 行程规则 | 服务端 TypeScript 校验器 + Agent 结构化建议 | 固定预约/时段/行程 ID 由代码硬校验；模型不可直接写库、下单或覆盖预约 |
@@ -45,7 +45,7 @@ BioTrip 不是再生成一份完整攻略，而是把 WHOOP 身体状态、旅�
 - `read:body_measurement`：WHOOP 可用的身高、体重和最大心率测量。
 - `offline`：获取可续期的 Refresh Token，不是健康数据授权范围。
 
-不申请 `read:profile`，不批量传送历史数据；规划请求将本次当前周期与近七日范围中实际返回的相关指标传给百炼。WHOOP API 没有独立压力值，`strain` 是生理活动负荷而非心理压力；疲劳/压力等主观感受由旅客自己报告。用户明确同意完整指标发给百炼，但每次连接/生成界面仍需透明展示数据流、数据范围、断开入口和“不是医疗建议”。
+申请 `read:profile` 仅用于在账户页显示连接的 WHOOP 账号名称与邮箱，这两个字段不发送给任何智能体；不批量传送历史数据，规划请求将本次当前周期与近七日范围中实际返回的相关指标传给百炼。WHOOP API 没有独立压力值，`strain` 是生理活动负荷而非心理压力；疲劳/压力等主观感受由旅客自己报告。用户明确同意完整指标发给百炼，但每次连接/生成界面仍需透明展示数据流、数据范围、断开入口和“不是医疗建议”。
 
 ### 约束和 Agent 分工
 

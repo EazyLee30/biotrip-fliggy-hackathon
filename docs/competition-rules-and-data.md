@@ -44,7 +44,7 @@ FlyAI API Key 配额（指南当前写法）：未登录访客 300 次总量；�
 用户已选择“完整 WHOOP 指标也发送给百炼”。据此，MVP 的授权和数据流为：
 
 - OAuth scopes：`read:recovery`、`read:cycles`、`read:sleep`、`read:workout`、`read:body_measurement`。
-- 不请求 `read:profile`：WHOOP 姓名和邮箱不属于旅行负荷规划所需指标。
+- 申请 `read:profile` 仅用于在账户页显示连接的是哪个 WHOOP 账号；姓名与邮箱不发送给任何智能体，也不用于行程规划。
 - OAuth 同时请求 `offline` 以取得可续期的 Refresh Token；它属于 OAuth 控制 scope，不是健康指标。
 - 时间范围：本次规划所需的当前生理周期与最近 7 天，用于当天数据和短期基线；不上传全部历史数据。每次只拉取实际用于当前行程的记录。
 - 完整字段范围：恢复分数、HRV、静息心率及 WHOOP 返回的其他恢复测量；睡眠时长、阶段与睡眠评分字段；生理周期的 strain、心率、步数等；锻炼活动及测量数据；身体测量字段。

@@ -48,7 +48,7 @@ function safeCode(value: unknown) {
 async function modelRequest(
   config: ModelTransport,
   endpoint: string,
-  body: unknown,
+  body: Record<string, unknown>,
   signal: AbortSignal,
   timeoutMs: number,
 ) {
@@ -57,7 +57,9 @@ async function modelRequest(
     response = await fetch(`${config.baseUrl}/${endpoint}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body), cache: "no-store", redirect: "error",
+      // `store:false` keeps conversation state off the provider's servers.
+      body: JSON.stringify({ store: false, ...body }),
+      cache: "no-store", redirect: "error",
       signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
     });
   } catch (error) {

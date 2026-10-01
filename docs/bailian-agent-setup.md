@@ -1,15 +1,21 @@
 # 百炼与飞猪实时规划配置
 
-生产默认使用 `BAILIAN_PLANNING_MODE=model`。服务端直接调用标准百炼模型 API 与飞猪只读搜索 API，避免由托管 Agent 在沙箱反复执行 CLI。没有有效配置、真实检索或可解析模型结果时，返回错误，不生成示例内容。
+生产使用 `BAILIAN_PLANNING_MODE=auto`：优先走百炼托管智能体（比赛要求，也是三个隔离角色的真实运行环境），托管智能体不可用时回退到标准百炼模型 API。两者实现同一个 `PlanningProvider` 接口，切换只在配置里，编排逻辑只有一份（见 `src/lib/planning/`）。没有有效配置、真实检索或可解析结果时返回错误，不生成示例内容。
 
-## 默认生产方式
+## 两种传输方式
 
-需要配置以下 Worker Secrets 与变量：
+- `auto`（默认）：三个 Agent 与 FlyAI 密钥库齐备时用托管智能体，否则用模型 API。
+- `managed`：只用托管智能体，托管不可用即报错，不回退。
+- `model`：只用标准百炼模型 API，不用托管智能体。
 
-- `BAILIAN_API_KEY`：标准百炼业务空间 API Key。可用独立 `BAILIAN_MODEL_API_KEY` 覆盖模型调用凭据。两者都不能使用以 `sk-sp-` 开头的 Token Plan Key。
+托管智能体是比赛指定路径，优先使用它；模型 API 是更便宜更快的兜底通道。两条路径共享同一份阶段表、同一套数据边界与同一份降级策略，因此行为一致，只有传输方式不同。
+
+## 必需配置
+
+- `BAILIAN_API_KEY`：标准百炼业务空间 API Key。可用独立 `BAILIAN_MODEL_API_KEY` 覆盖模型调用凭据。两者都不能使用以 `sk-sp-` 开头的 Token Plan Key（Token Plan 明确不允许用于应用后端）。
 - `BAILIAN_WORKSPACE_ID` 与 `BAILIAN_REGION=cn-beijing`：与标准 Key 一致的业务空间和地域。
-- `BAILIAN_PLAN_MODEL=qwen3.7-flash`：明确选择一个可用模型。2026-10-01 控制台核实该模型仍有免费额度，并已开启用完即停。额度和有效期以控制台为准；服务端不会自动切换模型或计费方式。
-- `BAILIAN_PLANNING_MODE=model`：默认方式。只有显式改为 `managed` 才使用下述旧托管方式；模型额度不足时不会回退到托管 Agent。
+- `BAILIAN_PLAN_MODEL=qwen3.7-flash`：仅模型 API 兜底路径使用。2026-10-01 控制台核实仍有免费额度并已开启用完即停。托管智能体各自在控制台配置模型（当前为 `qwen3.8-flash`）。额度和有效期以控制台为准；服务端不会自动切换模型或计费方式。
+- `BAILIAN_PLANNING_MODE=auto`：默认方式。
 - `FLYAI_API_KEY` 与 `FLYAI_SIGN_SECRET`：真实飞猪密钥与官方 CLI 签名配置，只保存在后台。
 - WHOOP OAuth 和账号数据库配置见 `.env.example` 与部署文档。
 

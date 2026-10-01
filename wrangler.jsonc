@@ -15,7 +15,9 @@
     "WHOOP_CLIENT_ID": "836f0014-7fb1-4a13-becb-ab4dab51a794",
     "WHOOP_REDIRECT_URI": "https://biotrip.ccwu.cc/api/whoop/callback",
     "BAILIAN_REGION": "cn-beijing",
-    "BAILIAN_PLANNING_MODE": "model",
+    // "auto" prefers Bailian Managed Agents (the competition requirement) and falls
+    // back to the plain model API. Pin to "managed" or "model" to disable fallback.
+    "BAILIAN_PLANNING_MODE": "auto",
     "BAILIAN_PLAN_MODEL": "qwen3.7-flash",
     "BAILIAN_WORKSPACE_ID": "llm-sdk0kiuxwrmb86l8",
     "BAILIAN_AGENT_ID": "agent_01M3F56Y16F23ER53G0ADNGHQR",
