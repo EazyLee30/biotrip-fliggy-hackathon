@@ -3,8 +3,8 @@ export type JourneyStatus = "draft" | "planned" | "active" | "completed";
 export type JourneyTripDraft = {
   originCity?: string;
   destinationCity?: string;
-  departureLocal?: string;
-  arrivalLocal?: string;
+  /** First and last day, `YYYY-MM-DD`. Clock times are derived, never collected. */
+  departureDate?: string;
   departureTimezone?: string;
   destinationTimezone?: string;
   returnDate?: string;
@@ -45,7 +45,7 @@ export type JourneyProvenance = {
   }>;
   health: { basis: "whoop_recent" | "self_report" | "preferences_only"; whoopUnavailable: boolean };
   local: { verified: boolean; reason?: string };
-  flyai: { searches: number; failedSearches: number; failedCategories: string[]; sourceCount: number };
+  flyai: { searches: number; failedSearches: number; failedCategories: string[]; sourceCount: number; executor: "agent_skill" | "worker" };
   memory: { applied: boolean; source: "learned" | "profile" | "none"; noteCount: number };
 };
 

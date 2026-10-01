@@ -59,7 +59,21 @@ OAuth 回调本地地址为 `http://localhost:3000/api/whoop/callback`，必须�
 
 ## 接入与发布状态
 
-生产环境已配置 WHOOP OAuth、百炼 Managed Agents、健康解读/当地服务/旅行编排三个 Agent，以及只在旅行 Agent 会话中使用的 FlyAI 凭据 Vault。WHOOP App 目前是 Sandbox，最多 10 个连接成员。默认支持邮箱和密码登录；新用户首次验证邮箱并设置密码，已有验证码账户可在“注册 / 首次设置密码”或个人档案的“登录与安全”设置密码，原账户与记忆保留。“忘记密码”通过邮件验证重置，可选验证码登录仍可用。验证邮件使用 Resend 事务邮件 API；生产环境还需要验证 `notify.biotrip.ccwu.cc` 并写入 Worker Secret `RESEND_API_KEY`。Cloudflare Email Routing 可免费用于自定义地址收信转发，不负责给任意用户发送登录码。百炼账户余额显示 ¥0；在可用额度或余额恢复前，真实规划请求可能因供应商余额失败，不会退回演示数据。邮箱配置步骤见[邮箱登录说明](docs/email-auth-setup.md)，部署与平台验证状态见[平台接入清单](docs/platform-access-checklist.md)。
+**权威状态见 [项目状态与交付清单](docs/project-plan.md)，改进排期见 [改进计划](docs/improvement-plan.md)。** 本节只做摘要，两者不一致时以 `project-plan.md` 为准。
+
+生产环境已配置 WHOOP OAuth、百炼 Managed Agents、健康解读/当地服务/旅行编排三个 Agent，以及只在旅行 Agent 会话中使用的 FlyAI 凭据 Vault。WHOOP App 目前是 Sandbox，最多 10 个连接成员。默认支持邮箱和密码登录；新用户首次验证邮箱并设置密码，已有验证码账户可在“注册 / 首次设置密码”或个人档案的“登录与安全”设置密码，原账户与记忆保留。“忘记密码”通过邮件验证重置，可选验证码登录仍可用。
+
+### 已知未完成事项
+
+以下三项在提交前必须闭合，逐条核实方式见 [project-plan.md 第 3 节](docs/project-plan.md)：
+
+1. **线上 Worker 版本落后仓库两次提交。** 生产 Version `a798497d` 部署于统一流水线重构（`7e16b18`）和文档对齐（`263d726`）之前，线上运行的不是当前代码。重新部署会同时让 `BAILIAN_PLANNING_MODE=auto` 生效，首次真实规划将走 Managed Agent 运行时计费。
+2. **生产 D1 迁移状态未核实。** 文档只有 `0002_password_auth.sql` 的应用记录；`0003_journeys.sql`、`0004_whoop_connections.sql`、`0005_learned_preferences.sql` 状态未知。`journeys` 表缺失会让所有旅程接口返回 503。**必须先应用迁移，再部署代码。**
+3. **邮件登录配置状态两份文档曾互相矛盾，现统一标记为待核实。** 验证邮件使用 Resend 事务邮件 API，发信域为 `notify.biotrip.ccwu.cc`。`RESEND_API_KEY` 是否已写入 Worker Secret、该子域是否已在 Resend 完成 DNS 验证，需以 `pnpm exec wrangler secret list` 与 Resend 控制台为准。未通过则线上无法注册。Cloudflare Email Routing 可免费用于自定义地址收信转发，不负责给任意用户发送登录码。
+
+百炼账户余额此前显示 ¥0；在可用额度或余额恢复前，真实规划请求会因供应商余额失败并明确报错，不会退回演示数据。**截至本文更新，BioTrip 尚未成功完成过一次真实的端到端规划**，因此所有"已配置"均指平台侧资源配置完成，不代表链路已验证。
+
+邮箱配置步骤见[邮箱登录说明](docs/email-auth-setup.md)，部署操作见[Cloudflare 部署说明](docs/cloudflare-deployment.md)，平台验证状态见[平台接入清单](docs/platform-access-checklist.md)，市场定位见[市场与差异化](docs/market-and-differentiation.md)。
 
 ## 仓库与安全
 

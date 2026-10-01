@@ -76,6 +76,14 @@ export type FlyaiInventory = {
   searches: number;
   failedSearches: number;
   failedCategories: string[];
+  /**
+   * Who actually ran the searches. The competition requires the Bailian agent to
+   * use the official FlyAI Skill, so `agent_skill` is the intended path; when the
+   * sandbox cannot reach the signing bridge the Worker performs the identical
+   * read-only searches itself. Both return verified FlyAI data — only the
+   * executor differs, and the interface reports which one ran.
+   */
+  executor: "agent_skill" | "worker";
 };
 
 export type ComposedPlan = {
@@ -127,6 +135,9 @@ export type TripTiming = {
   arrivalDate: string;
   endDate: string;
   days: number;
+  /** Derived wall-clock strings, so no prompt implies the traveller chose them. */
+  departureLocal: string;
+  arrivalLocal: string;
 };
 
 /**
@@ -166,6 +177,13 @@ function errorName(value: unknown) {
     ? (value as Error).name : "";
 }
 
+/** Provider errors carry their own `code`; that reason must survive normalisation. */
+function providerCode(value: unknown) {
+  if (typeof value !== "object" || value === null) return null;
+  const code = (value as { code?: unknown }).code;
+  return typeof code === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(code) ? code : null;
+}
+
 export function normalizePlannerError(
   stage: PlanStage,
   operation: string,
@@ -177,7 +195,10 @@ export function normalizePlannerError(
   if (name === "TimeoutError" || name === "AbortError") {
     return new PlannerError(stage, operation, 504, "UPSTREAM_TIMEOUT", null, degradable);
   }
-  return new PlannerError(stage, operation, 502, "PLANNING_RUNTIME_ERROR", null, degradable);
+  // Keep the upstream reason: "FLYAI_AUTH_ERROR" tells an operator what to fix,
+  // a generic runtime code tells them nothing.
+  const preserved = providerCode(error);
+  return new PlannerError(stage, operation, 502, preserved ?? "PLANNING_RUNTIME_ERROR", null, degradable);
 }
 
 /**

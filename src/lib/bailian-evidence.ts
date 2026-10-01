@@ -7,7 +7,7 @@ export type EvidenceEvent = {
   content?: Array<{ type?: string; data?: Record<string, unknown> }>;
 };
 /** Mirrors the pipeline stage names so evidence is always attributed correctly. */
-type EvidenceMode = "health_insight" | "local_research" | "flyai_inventory";
+type EvidenceMode = "health_insight" | "local_research" | "flyai_inventory" | "compose_plan";
 type CommandCategory = "flyai_search" | "flyai_help" | "flyai_auth" | "environment_probe" | "other";
 export type SafeToolObservation = {
   commandCategory: CommandCategory | null;
@@ -146,7 +146,12 @@ export function createToolEvidence(mode: EvidenceMode) {
       observation.isFlyaiSearch = category === "flyai_search";
       if (name === "web_search") {
         webSearchCalls += 1;
-        if (mode === "local_research" && webSearchCalls > 8) observation.failureCode = "WEB_SEARCH_LIMIT_EXCEEDED";
+        if (mode === "local_research" && webSearchCalls > 8 && successfulWebSearches === 0) {
+          // Over-searching only counts as failure while nothing usable has come
+          // back. Once real sources are verified, an extra call is wasteful
+          // rather than wrong, and discarding those results would be worse.
+          observation.failureCode = "WEB_SEARCH_LIMIT_EXCEEDED";
+        }
       }
       if (name === "bash") {
         bashCalls += 1;

@@ -72,9 +72,13 @@ export function ProvenanceBlock({
           {flyai && (
             <div className={styles.summaryRow}>
               <span><Icon name="train" size={14} />飞猪实时商品</span>
-              <strong>
-                {flyai.searches > 0 ? `${flyai.searches} 次搜索 · ${flyai.sourceCount} 条来源` : "本次未获取"}
-              </strong>
+              <strong>{flyai.searches > 0 ? `${flyai.searches} 次搜索 · ${flyai.sourceCount} 条来源` : "本次未获取"}</strong>
+            </div>
+          )}
+          {flyai?.executor && (
+            <div className={styles.summaryRow}>
+              <span><Icon name="shield" size={14} />检索执行者</span>
+              <strong>{flyai.executor === "agent_skill" ? "百炼智能体内置 FlyAI Skill" : "BioTrip 服务端只读签名通道"}</strong>
             </div>
           )}
         </div>

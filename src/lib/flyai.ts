@@ -83,12 +83,28 @@ export async function searchFlyai(tool: string, args: Record<string, unknown>, s
   let response: Response;
   try {
     response = await fetch(ENDPOINT, {
-      method: "POST", headers, body, cache: "no-store", redirect: "error",
+      method: "POST", headers, body, cache: "no-store",
+      // A redirect would break the signature, so surface it explicitly instead
+      // of letting the fetch layer throw an opaque connection error.
+      redirect: "manual",
       signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
     });
   } catch (error) {
     signal.throwIfAborted();
-    throw new FlyaiSearchError(504, error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "FLYAI_TIMEOUT" : "FLYAI_CONNECTION_ERROR");
+    const timedOut = error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name);
+    const cause = error instanceof Error ? (error.cause as { code?: string; name?: string } | undefined) : undefined;
+    // Keep the transport reason: DNS, TLS and reset are different fixes.
+    console.info("[BioTrip flyai transport failure]", {
+      tool,
+      category,
+      name: error instanceof Error ? error.name : typeof error,
+      cause: cause?.code ?? cause?.name ?? "",
+    });
+    throw new FlyaiSearchError(504, timedOut ? "FLYAI_TIMEOUT" : "FLYAI_CONNECTION_ERROR");
+  }
+  if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel();
+    throw new FlyaiSearchError(502, "FLYAI_UNEXPECTED_REDIRECT");
   }
   if (!response.ok) {
     await response.body?.cancel();
@@ -120,6 +136,16 @@ export async function searchFlyai(tool: string, args: Record<string, unknown>, s
   let payload: unknown;
   try { payload = record(first) ? JSON.parse(String(first.text)) : null; } catch { payload = null; }
   if (!record(payload) || payload.status !== 0 || payload.message !== "success" || !record(payload.data)) {
+    // Keep the reason, never the content: an unexplained provider rejection is
+    // the difference between a quota problem and a wrong argument shape.
+    console.info("[BioTrip flyai output rejected]", {
+      tool,
+      category,
+      status: record(payload) ? String(payload.status) : typeof payload,
+      message: record(payload) && typeof payload.message === "string" ? payload.message.slice(0, 120) : "unparsed",
+      systemMessage: record(payload) && typeof payload.systemMessage === "string" ? payload.systemMessage.slice(0, 120) : "",
+      dataKeys: record(payload) && record(payload.data) ? Object.keys(payload.data).slice(0, 8) : [],
+    });
     throw new FlyaiSearchError(502, "FLYAI_OUTPUT_UNVERIFIED");
   }
   const sources = new Map<string, FlyaiSource>();

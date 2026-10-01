@@ -46,7 +46,7 @@ function fixture() {
 }
 const DRAFT = {
   intention: "安静恢复", colorTone: "松林绿", consent: true,
-  trip: { originCity: "上海", destinationCity: "京都", departureLocal: "2026-10-12T10:00", arrivalLocal: "2026-10-12T14:00", departureTimezone: "Asia/Shanghai", destinationTimezone: "Asia/Tokyo", returnDate: "2026-10-14", planningStyle: "flexible" },
+  trip: { originCity: "上海", destinationCity: "京都", departureDate: "2026-10-12", departureTimezone: "Asia/Shanghai", destinationTimezone: "Asia/Tokyo", returnDate: "2026-10-14", planningStyle: "flexible" },
 };
 const PLAN = {
   source: "live", retrievedAt: "2026-10-01T11:00:00Z", timezone: { shiftMinutes: 60, travelHours: 3 },
@@ -115,7 +115,7 @@ test("stale feedback has no partial feedback or memory writes", async () => {
     assert.equal((await journeys.listJourneyFeedback(ACCOUNT, journey.id)).length, 1);
     assert.equal((await journeys.listJourneyMemories(ACCOUNT)).length, 0);
     assert.throws(() => journeys.parseFeedback({ version: 1, note: "反馈", memoryNote: "未同意保存" }), (error) => error.code === "INVALID_JOURNEY");
-    assert.throws(() => journeys.parseJourneyDraft({ trip: { arrivalLocal: "2026-02-30T10:00" } }), (error) => error.code === "INVALID_JOURNEY");
+    assert.throws(() => journeys.parseJourneyDraft({ trip: { departureDate: "2026-02-30" } }), (error) => error.code === "INVALID_JOURNEY");
   } finally { sqlite.close(); }
 });
 
@@ -174,6 +174,43 @@ function rateLimit(database) {
     }),
   });
 }
+
+test("a draft carries dates only; clock times are never collected or stored", async () => {
+  const { journeys, sqlite } = fixture();
+  try {
+    const created = await journeys.createJourney(ACCOUNT, { draft: DRAFT });
+    assert.deepEqual(Object.keys(created.draft.trip).sort(), [
+      "departureDate", "departureTimezone", "destinationCity", "destinationTimezone",
+      "originCity", "planningStyle", "returnDate",
+    ].sort());
+    // A precise time would mean the interface asked for something it should not.
+    assert.throws(() => journeys.parseJourneyDraft({ trip: { departureLocal: "2026-10-12T10:00" } }), (error) => error.code === "INVALID_JOURNEY");
+    // A draft may be mid-edit, so an inverted range is stored rather than lost;
+    // the strict rule belongs at generation time.
+    assert.ok(journeys.parseJourneyDraft({ trip: { ...DRAFT.trip, returnDate: "2026-10-01" } }));
+  } finally { sqlite.close(); }
+});
+
+test("generation refuses an inverted or missing date range", () => {
+  const { validateInput, localDateTimeAt, ASSUMED_DEPARTURE_HOUR, ASSUMED_ARRIVAL_HOUR } =
+    loadModule("lib/planner-input.ts");
+  const base = {
+    intention: "安静恢复", colorTone: "未指定", fatigue: null, subjectiveStress: null,
+    ambientPreferences: [], profileMemoryNotes: "", consent: true,
+    trip: {
+      originCity: "上海", destinationCity: "京都", departureDate: "2026-10-12",
+      departureTimezone: "Asia/Shanghai", destinationTimezone: "Asia/Tokyo",
+      returnDate: "2026-10-14", planningStyle: "flexible", itineraryText: "", requestedServices: [], foodPreferences: "",
+    },
+  };
+  assert.ok(validateInput(base));
+  assert.equal(validateInput({ ...base, trip: { ...base.trip, returnDate: "2026-10-01" } }), null);
+  assert.equal(validateInput({ ...base, trip: { ...base.trip, departureDate: "" } }), null);
+  assert.equal(validateInput({ ...base, trip: { ...base.trip, departureDate: "2026-10-32" } }), null);
+  // Times are derived, never supplied.
+  assert.equal(localDateTimeAt("2026-10-12", ASSUMED_DEPARTURE_HOUR), "2026-10-12T09:00");
+  assert.equal(localDateTimeAt("2026-10-12", ASSUMED_ARRIVAL_HOUR), "2026-10-12T15:00");
+});
 
 test("planning allows one concurrent run per account and releases its lease", async () => {
   const { database, sqlite } = storage();

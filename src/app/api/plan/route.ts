@@ -3,7 +3,10 @@ import { getCurrentAccount, isSameOrigin } from "@/lib/auth";
 import { JourneyError } from "@/lib/journeys";
 import { journeyFailure, readJourneyJson } from "@/lib/journey-http";
 import {
+  ASSUMED_ARRIVAL_HOUR,
+  ASSUMED_DEPARTURE_HOUR,
   localDateTimeAsInstant,
+  localDateTimeAt,
   offsetMinutesAt,
   parseSchedule,
   validateInput,
@@ -34,13 +37,15 @@ async function reservePlanning(accountId: string, leaseSeconds: number) {
 }
 
 function resolveTiming(input: PlannerInput): TripTiming {
-  const departureInstant = localDateTimeAsInstant(input.trip.departureLocal, input.trip.departureTimezone);
-  const arrivalInstant = localDateTimeAsInstant(input.trip.arrivalLocal, input.trip.destinationTimezone);
+  const departureLocal = localDateTimeAt(input.trip.departureDate, ASSUMED_DEPARTURE_HOUR);
+  const arrivalLocal = localDateTimeAt(input.trip.departureDate, ASSUMED_ARRIVAL_HOUR);
+  const departureInstant = localDateTimeAsInstant(departureLocal, input.trip.departureTimezone);
+  const arrivalInstant = localDateTimeAsInstant(arrivalLocal, input.trip.destinationTimezone);
   if (arrivalInstant.getTime() < departureInstant.getTime()) throw new Error("抵达时间不能早于出发时间。");
   const timezoneShiftMinutes =
     offsetMinutesAt(arrivalInstant, input.trip.destinationTimezone) -
     offsetMinutesAt(departureInstant, input.trip.departureTimezone);
-  const arrivalDate = input.trip.arrivalLocal.slice(0, 10);
+  const arrivalDate = input.trip.departureDate;
   const endDate = input.trip.returnDate || arrivalDate;
   const days = Math.max(1, Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${arrivalDate}T00:00:00Z`)) / 86_400_000) + 1);
   return {
@@ -51,6 +56,8 @@ function resolveTiming(input: PlannerInput): TripTiming {
     arrivalDate,
     endDate,
     days,
+    departureLocal,
+    arrivalLocal,
   };
 }
 

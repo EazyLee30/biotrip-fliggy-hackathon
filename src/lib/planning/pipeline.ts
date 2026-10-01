@@ -34,7 +34,7 @@ export type PlanningProvenance = {
   stages: StageReport[];
   health: { basis: HealthBasis; whoopUnavailable: boolean };
   local: { verified: boolean; reason?: string };
-  flyai: { searches: number; failedSearches: number; failedCategories: string[]; sourceCount: number };
+  flyai: { searches: number; failedSearches: number; failedCategories: string[]; sourceCount: number; executor: "agent_skill" | "worker" };
   memory: { applied: boolean; source: "learned" | "profile" | "none"; noteCount: number };
 };
 
@@ -72,7 +72,7 @@ function derivedBasis(input: PlannerInput, isNearOrOngoingTrip: boolean, hasWhoo
 }
 
 const LOCAL_SERVICE_KINDS = new Set(["local_food", "relaxation", "onsen", "massage", "medical_info"]);
-const EMPTY_INVENTORY: FlyaiInventory = { sources: [], searches: 0, failedSearches: 0, failedCategories: [] };
+const EMPTY_INVENTORY: FlyaiInventory = { sources: [], searches: 0, failedSearches: 0, failedCategories: [], executor: "worker" };
 
 /**
  * Runs the whole plan.
@@ -218,6 +218,7 @@ export async function runPlanning(request: RunPlanningRequest): Promise<Planning
         failedSearches: inventory.failedSearches,
         failedCategories: inventory.failedCategories,
         sourceCount: inventory.sources.length,
+        executor: inventory.executor,
       },
       memory: request.memory,
     },

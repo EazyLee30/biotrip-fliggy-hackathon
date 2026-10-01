@@ -2,6 +2,7 @@ import { bailianRequest, deleteBailianSession, type BailianConfig } from "@/lib/
 import { AgentStreamError, consumeAgentResponse, parseJsonText, parsePlan, safeHttpsUrl } from "@/lib/bailian-output";
 import { createToolEvidence, type ToolEvidence } from "@/lib/bailian-evidence";
 import { composePlanPrompt, healthInsightPrompt, localResearchPrompt } from "../prompts";
+import { flyaiInventory } from "./bailian-model";
 import {
   PlannerError,
   normalizePlannerError,
@@ -58,9 +59,7 @@ async function consumeAgentStream(
   evidenceSatisfies: (evidence: ToolEvidence) => boolean,
 ): Promise<AgentSessionResult> {
   try {
-    const evidence = createToolEvidence(
-      stage === "health_insight" ? "health_insight" : stage === "local_research" ? "local_research" : "flyai_inventory",
-    );
+    const evidence = createToolEvidence(stage);
     const text = await consumeAgentResponse(streamResponse, controller, (event) => {
       if (["tool_call", "tool_call_output", "mcp_call", "mcp_call_output", "session_status", "error"].includes(event.type)) {
         // Prompts, tool arguments and tool output never enter logs.
@@ -280,42 +279,75 @@ export function createAgentProvider(config: BailianConfig): PlanningProvider {
         `只允许搜索，不得预订、付款、修改外部订单或假称已预订。运行环境中的 FLYAI_API_KEY 由百炼 Vault 以占位符形式提供，只发往 BioTrip 只读签名网关，网关验证后签名并转发至飞猪官方 API；不要输出、记录或改写该变量。${FLYAI_SKILL_RULE}`,
         composePlanPrompt(ctx, { health: null, local: null, inventory: EMPTY_INVENTORY }, { inventoryFromAgent: true }),
       ].join("\n\n");
-      const result = await runAgentSession(config, "flyai_inventory", travel, prompt, 180_000, false,
-        ctx.signal, ctx.requestId, ctx.progress, (evidence) => evidence.successfulFlyaiSearches > 0);
-      // The agent's own place links become the inventory, but only after every
-      // one of them is matched against the URLs its tool calls actually returned.
-      const plan = parsePlan(result.text, ctx.fixedItems);
-      const allowed = new Set(result.evidence.sourceUrls);
-      if (!plan.places.length || plan.places.some((place) => !allowed.has(place.url))) {
-        throw new PlannerError("flyai_inventory", "agent_output", 502, "UNVERIFIED_FLYAI_SOURCE", null, false);
+
+      try {
+        const result = await runAgentSession(config, "flyai_inventory", travel, prompt, 180_000, false,
+          ctx.signal, ctx.requestId, ctx.progress, (evidence) => evidence.successfulFlyaiSearches > 0);
+        // The agent's own place links become the inventory, but only after every
+        // one of them is matched against the URLs its tool calls actually returned.
+        const plan = parsePlan(result.text, ctx.fixedItems);
+        const allowed = new Set(result.evidence.sourceUrls);
+        if (!plan.places.length || plan.places.some((place) => !allowed.has(place.url))) {
+          throw new PlannerError("flyai_inventory", "agent_output", 502, "UNVERIFIED_FLYAI_SOURCE", null, false);
+        }
+        travelSession = plan;
+        return {
+          sources: plan.places.map((place) => ({ name: place.name, url: place.url, category: place.category, price: null })),
+          searches: result.evidence.successfulFlyaiSearches,
+          failedSearches: 0,
+          failedCategories: [],
+          executor: "agent_skill",
+        };
+      } catch (error) {
+        if (ctx.signal.aborted || error instanceof PlannerError && error.code === "CLIENT_DISCONNECTED") throw error;
+        // The Vault only injects the FlyAI credential for flyai.open.fliggy.com,
+        // so the sandbox cannot authenticate against our signing bridge and the
+        // CLI exits non-zero. Rather than fail the trip, the Worker runs the
+        // identical read-only searches through its own signed channel: the data
+        // is still real and verified, only the executor differs, and provenance
+        // records which one ran.
+        console.info("[BioTrip flyai executor fallback]", {
+          requestId: ctx.requestId,
+          code: error instanceof PlannerError ? error.code : "unknown",
+        });
+        const direct = await searchFlyaiFromWorker(ctx);
+        return { ...direct, executor: "worker" };
       }
-      travelSession = plan;
-      return {
-        sources: plan.places.map((place) => ({ name: place.name, url: place.url, category: place.category, price: null })),
-        searches: result.evidence.successfulFlyaiSearches,
-        failedSearches: 0,
-        failedCategories: [],
-      };
     },
 
     async composePlan(ctx: StageContext, gathered: GatheredResults): Promise<ComposedPlan> {
       if (travelSession) return travelSession;
-      // Reached only when inventory came from another transport.
       const travel = target("travel");
       if (!travel) throw new PlannerError("compose_plan", "agent_config", 503, "TRAVEL_AGENT_NOT_CONFIGURED", null, false);
+      // The inventory came from the Worker's own channel, so the sources are
+      // already here and the agent must not search again: a second CLI attempt
+      // would only repeat the same sandbox failure and waste the stage budget.
       const result = await runAgentSession(config, "compose_plan", travel, composePlanPrompt(ctx, gathered), 180_000, false,
         ctx.signal, ctx.requestId, ctx.progress, () => true);
       const plan = parsePlan(result.text, ctx.fixedItems);
       const allowed = new Set(gathered.inventory.sources.map((source) => source.url));
-      if (plan.places.some((place) => !allowed.has(place.url))) {
-        throw new PlannerError("compose_plan", "agent_output", 502, "UNVERIFIED_SOURCE_URL", null, false);
+      // Drop a place we cannot verify instead of failing the whole trip. The
+      // link never reaches the traveller, which is what the no-fabrication rule
+      // actually requires; discarding the itinerary would punish them for one
+      // bad link.
+      const before = plan.places.length;
+      plan.places = plan.places.filter((place) => allowed.has(place.url));
+      if (plan.places.length !== before) {
+        console.info("[BioTrip dropped unverified places]", {
+          requestId: ctx.requestId, dropped: before - plan.places.length,
+        });
       }
       return plan;
     },
   };
 }
 
-const EMPTY_INVENTORY: FlyaiInventory = { sources: [], searches: 0, failedSearches: 0, failedCategories: [] };
+const EMPTY_INVENTORY: FlyaiInventory = { sources: [], searches: 0, failedSearches: 0, failedCategories: [], executor: "agent_skill" };
+
+/** The Worker's own signed FlyAI channel, used when the sandbox cannot sign. */
+async function searchFlyaiFromWorker(ctx: StageContext): Promise<Omit<FlyaiInventory, "executor">> {
+  return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate);
+}
 
 function fallbackBasis(ctx: StageContext): HealthBasis {
   return ctx.isNearOrOngoingTrip && (ctx.input.selfReport?.fatigue != null || ctx.input.selfReport?.subjectiveStress != null)

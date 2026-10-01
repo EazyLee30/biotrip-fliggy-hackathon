@@ -12,7 +12,7 @@ const HEALTH_MARKER = { cycles: [{ strain: 12.4 }], recoveries: [{ score: { reco
 const gathered = {
   trip: {
     originCity: "上海", destinationCity: "东京",
-    departureLocal: "2026-10-10T09:00", arrivalLocal: "2026-10-10T15:00",
+    departureDate: "2026-10-10",
     departureTimezone: "Asia/Shanghai", destinationTimezone: "Asia/Tokyo",
     returnDate: "2026-10-15", planningStyle: "flexible",
     itineraryText: "", requestedServices: ["hotels"], foodPreferences: "",
@@ -103,4 +103,8 @@ test("a provider error keeps its identity and a raw error becomes a pipeline err
   const timeout = normalizePlannerError("compose_plan", "compose_plan", timeoutError);
   assert.equal(timeout.status, 504);
   assert.equal(timeout.code, "UPSTREAM_TIMEOUT");
+  // An upstream reason must survive so diagnostics stay actionable.
+  const upstream = new Error("flyai rejected");
+  upstream.code = "FLYAI_AUTH_ERROR";
+  assert.equal(normalizePlannerError("flyai_inventory", "pipeline", upstream).code, "FLYAI_AUTH_ERROR");
 });

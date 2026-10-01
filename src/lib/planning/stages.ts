@@ -35,7 +35,9 @@ export const STAGE_POLICIES: readonly StagePolicy[] = [
     budgetMs: 90_000,
     // The FlyAI credential is bound by the provider to a single agent session,
     // so it is deliberately absent from `grants`: credentials are never stage
-    // input and can never travel through a prompt.
+    // input and can never travel through a prompt. When the sandbox cannot reach
+    // the signing bridge the provider falls back to the Worker's own signed
+    // channel, which returns the same verified data.
     grants: ["trip"],
     degradable: false,
     required: true,

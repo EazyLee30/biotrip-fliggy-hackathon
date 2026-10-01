@@ -7,13 +7,23 @@ const INTENTIONS = new Set(["安静恢复", "慢慢探索", "补充活力", "未
 const COLORS = new Set(["松林绿", "湖水蓝", "暖光橙", "不限色调", "未指定"]);
 
 export type ScheduleItem = { time: string; name: string; fixed: boolean; date?: string };
+
+/**
+ * The traveller picks dates, not clock times. Precise times become a labelled
+ * planning assumption derived server-side, so the interface needs one tap per
+ * trip while the itinerary can still reason about arrival windows and jet lag.
+ */
+export const ASSUMED_DEPARTURE_HOUR = 9;
+export const ASSUMED_ARRIVAL_HOUR = 15;
+
 export type TripInput = {
   originCity: string;
   destinationCity: string;
-  departureLocal: string;
-  arrivalLocal: string;
+  /** First day of the trip, `YYYY-MM-DD`. */
+  departureDate: string;
   departureTimezone: string;
   destinationTimezone: string;
+  /** Last day of the trip, `YYYY-MM-DD`; empty means an open-ended trip. */
   returnDate: string;
   planningStyle: "flexible" | "structured";
   itineraryText: string;
@@ -43,14 +53,9 @@ export function hasRecentWhoopSignal(value: unknown) {
   );
 }
 
-function isLocalDateTime(value: unknown) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return false;
-  const [date, time] = value.split("T");
-  const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute] = time.split(":").map(Number);
-  const check = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  return check.getUTCFullYear() === year && check.getUTCMonth() + 1 === month &&
-    check.getUTCDate() === day && hour < 24 && minute < 60;
+/** Local wall-clock string for a date under an assumed hour, e.g. `2026-10-12T15:00`. */
+export function localDateTimeAt(date: string, hour: number) {
+  return `${date}T${String(hour).padStart(2, "0")}:00`;
 }
 
 export function isCalendarDate(value: unknown): value is string {
@@ -105,7 +110,7 @@ export function validateInput(value: unknown): PlannerInput | null {
     typeof profileMemoryNotes !== "string" || profileMemoryNotes.length > 5000 ||
     typeof trip.originCity !== "string" || !trip.originCity.trim() || trip.originCity.length > 100 ||
     typeof trip.destinationCity !== "string" || !trip.destinationCity.trim() || trip.destinationCity.length > 100 ||
-    !isLocalDateTime(trip.departureLocal) || !isLocalDateTime(trip.arrivalLocal) ||
+    !isCalendarDate(trip.departureDate) ||
     !hasTimezone(trip.departureTimezone) || !hasTimezone(trip.destinationTimezone) ||
     typeof trip.returnDate !== "string" || (trip.returnDate !== "" && !isCalendarDate(trip.returnDate)) ||
     typeof trip.planningStyle !== "string" || !["flexible", "structured"].includes(trip.planningStyle) ||
@@ -116,6 +121,9 @@ export function validateInput(value: unknown): PlannerInput | null {
   ) return null;
 
   if (!parseSchedule(trip.itineraryText)) return null;
+  // A return date earlier than departure is a picker mistake, not a request to
+  // invert the trip.
+  if (trip.returnDate !== "" && String(trip.returnDate) < String(trip.departureDate)) return null;
   return {
     intention,
     colorTone,
@@ -129,8 +137,7 @@ export function validateInput(value: unknown): PlannerInput | null {
     trip: {
       originCity: trip.originCity.trim(),
       destinationCity: trip.destinationCity.trim(),
-      departureLocal: trip.departureLocal as string,
-      arrivalLocal: trip.arrivalLocal as string,
+      departureDate: trip.departureDate as string,
       departureTimezone: trip.departureTimezone,
       destinationTimezone: trip.destinationTimezone,
       returnDate: trip.returnDate,

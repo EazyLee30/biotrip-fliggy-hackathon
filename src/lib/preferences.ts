@@ -254,10 +254,12 @@ export type PreferenceDefaults = {
   ambientPreferences?: string[];
   requestedServices?: string[];
   foodPreferences?: string;
-  /** Proven habits, phrased for the traveller to read. */
+  /** Proven learned defaults, phrased for the traveller to read. */
   notes: string[];
   /** Familiar destinations offered as one-tap chips rather than prefilled. */
   destinations: string[];
+  /** Cities the traveller departs from, offered first in the origin picker. */
+  homeCities: string[];
   /** True once at least one preference has been repeated. */
   established: boolean;
 };
@@ -294,6 +296,7 @@ export function preferenceDefaults(preferences: LearnedPreference[]): Preference
     foodPreferences: food?.label,
     notes,
     destinations: destinations.map((entry) => entry.value),
+    homeCities: strongest(preferences, "destination", 1, 5).map((entry) => entry.value),
     established: preferences.some((entry) => entry.hits >= PREFILL_MIN_HITS),
   };
 }

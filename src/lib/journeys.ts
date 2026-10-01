@@ -91,12 +91,11 @@ export function parseJourneyDraft(value: unknown): JourneyDraft {
   if (value.trip !== undefined) {
     if (!isRecord(value.trip)) invalid();
     const input = value.trip;
-    onlyKeys(input, ["originCity", "destinationCity", "departureLocal", "arrivalLocal", "departureTimezone", "destinationTimezone", "returnDate", "planningStyle", "itineraryText", "requestedServices", "foodPreferences"]);
+    onlyKeys(input, ["originCity", "destinationCity", "departureDate", "departureTimezone", "destinationTimezone", "returnDate", "planningStyle", "itineraryText", "requestedServices", "foodPreferences"]);
     const trip: JourneyTripDraft = {};
     if (input.originCity !== undefined) trip.originCity = text(input.originCity, 100);
     if (input.destinationCity !== undefined) trip.destinationCity = text(input.destinationCity, 100);
-    if (input.departureLocal !== undefined) trip.departureLocal = date(input.departureLocal, true);
-    if (input.arrivalLocal !== undefined) trip.arrivalLocal = date(input.arrivalLocal, true);
+    if (input.departureDate !== undefined) trip.departureDate = date(input.departureDate, false);
     if (input.departureTimezone !== undefined) trip.departureTimezone = timezone(input.departureTimezone);
     if (input.destinationTimezone !== undefined) trip.destinationTimezone = timezone(input.destinationTimezone);
     if (input.returnDate !== undefined) trip.returnDate = date(input.returnDate, false);

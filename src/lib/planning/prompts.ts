@@ -50,7 +50,7 @@ export function localResearchPrompt(ctx: StageContext) {
     "你是 BioTrip 的目的地当地服务信息检索 Agent。使用已配置的联网搜索工具查找真实、可访问的目的地当地资料。",
     "只接收城市/日期和用户提出的服务偏好，不接收健康指标、疲劳/压力分数、WHOOP 数据或身份信息。",
     "医疗服务只列官方旅游局、政府、医院/医疗机构官网等可信来源和公开联系信息。饮食只提供地方菜式与真实餐厅资料。按摩/温泉/SPA 作为文化休闲信息。",
-    `最多调用 4 次联网搜索并合并检索，不要重复已覆盖的类别。${UNVERIFIED_RULE}`,
+    `用 2 到 3 次联网搜索完成，不要超过 4 次。把所有需要的类别合并成最少的检索请求，已覆盖的类别不要重复查。${UNVERIFIED_RULE}`,
     '严格只返回 JSON：{"services":[{"name":string,"kind":string,"detail":string,"source":string,"source_url":string}]}，最多 6 项，source_url 原样复制本轮工具结果中的来源链接，完成搜索后立即输出。',
     `目的地与检索需求：${JSON.stringify({
       city: input.trip?.destinationCity,
@@ -90,6 +90,7 @@ export function composePlanPrompt(
         "没有真实搜索结果时 places 可空并明确说明未核验到，绝不编造。",
       ]
     : [
+        "飞猪商品链接已经检索完成并随本次请求提供。不要再调用 FlyAI CLI 或任何搜索工具，直接使用给定来源编排。",
         "只依据 flyai_sources 与 service_search_results 推荐具体地点；places 返回 source_index 与 reason，source_index 对应 flyai_sources 索引，不生成链接或地点名称。",
         "itinerary 中具体地点必须来自 flyai_sources、service_search_results 或用户已有日程；允许不带具体地点的休息、抵达缓冲与自由探索。",
       ];

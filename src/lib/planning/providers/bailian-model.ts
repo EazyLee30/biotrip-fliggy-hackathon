@@ -229,6 +229,8 @@ export function createModelProvider(transport: ModelTransport): PlanningProvider
         throw new ModelRequestError(502, "INCOMPLETE_TRAVEL_PLAN", requestId);
       }
       const plan = parsePlan(message.content, ctx.fixedItems);
+      // An out-of-range index is a fabrication; a well-formed link we never
+      // retrieved is simply dropped rather than shown.
       return { ...plan, places: bindPlaces(message.content, gathered.inventory.sources, requestId) };
     },
   };
@@ -290,7 +292,7 @@ export async function flyaiInventory(
     categories.push("航班");
     searches.push(searchFlyai("search_flight", {
       origin: trip.originCity, destination: trip.destinationCity,
-      depDate: trip.departureLocal.slice(0, 10),
+      depDate: trip.departureDate,
       ...(trip.returnDate ? { backDate: trip.returnDate } : {}),
       limit: 5,
     }, signal, "航班"));
@@ -314,6 +316,7 @@ export async function flyaiInventory(
     searches: results.length,
     failedSearches: results.length - successes.length,
     failedCategories: results.flatMap((result, index) => result.status === "rejected" ? [categories[index]] : []),
+    executor: "worker",
   };
 }
 

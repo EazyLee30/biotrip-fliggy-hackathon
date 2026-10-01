@@ -218,3 +218,102 @@
 @media (min-width: 700px) { .content { padding: 20px 32px 140px; } .headerInner { padding: 12px 32px; } .headerTitle strong { max-width: 440px; } .app h1 { font-size: 36px; } .wideGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 24px; } .wideGrid > .fullWidth { grid-column: 1 / -1; } .intentGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } .placeGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; } .wizardContent { max-width: 900px; } .breathCard { max-width: 590px; width: 100%; margin: auto; } .card { padding: 28px; } .hero h2 { font-size: 30px; } .metric strong { font-size: 27px; } .ambience { height: 180px; } }
 @media (min-width: 1050px) { .placeGrid { grid-template-columns: repeat(3, 1fr); } .headerTitle strong { max-width: 560px; } }
 @media (prefers-reduced-motion: reduce) { .app *, .app *::before { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
+
+/* --- Place picker: OTA-style city selection ------------------------------- */
+.placeTrigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 13px 15px; min-height: 50px; text-align: left;
+  border: 1px solid #d3daef; border-radius: 18px; background: #fff;
+  color: var(--z-ink); font: inherit; font-size: 15px; cursor: pointer;
+}
+.placeTrigger:hover, .placeTrigger:focus-visible { border-color: var(--z-green); outline: none; }
+.placeMenu {
+  margin-top: 8px; padding: 12px; border: 1px solid #d3daef; border-radius: 20px;
+  background: #fff; box-shadow: 0 12px 30px #141b2b1f;
+  max-height: 60vh; overflow-y: auto; overscroll-behavior: contain;
+}
+.placeSearch {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-radius: 14px; background: var(--z-inset); color: var(--z-muted);
+}
+.placeSearch input { flex: 1; border: 0; background: transparent; font: inherit; color: var(--z-ink); outline: none; }
+.placePreview { display: flex; align-items: center; gap: 8px; margin: 10px 2px 0; color: var(--z-muted); font-size: 12px; }
+.placeFlag { font-size: 20px; line-height: 1; }
+.placeGroupTitle { margin: 14px 0 6px; font-size: 11px; letter-spacing: .06em; color: #6d7a72; }
+.placeList { display: grid; gap: 2px; }
+.placeRow {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 10px;
+  border: 0; border-radius: 14px; background: transparent; color: var(--z-ink);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.placeRow:hover, .placeRow:focus-visible { background: var(--z-inset); outline: none; }
+.placeRow.active { background: #99efe560; }
+.placeText { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.placeText strong { font-size: 14px; font-weight: 550; }
+.placeText small, .placeZone { color: var(--z-muted); font-size: 11px; }
+.placeZone { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* --- Date range: tap start, tap end -------------------------------------- */
+.dateSummary {
+  display: flex; align-items: center; gap: 12px; padding: 13px 15px;
+  border-radius: 18px; background: var(--z-inset);
+}
+.dateSummary > div { display: flex; flex-direction: column; gap: 1px; }
+.dateSummary small { color: #6d7a72; font-size: 11px; }
+.dateSummary strong { font-size: 16px; font-weight: 550; }
+.dateStrip {
+  display: flex; gap: 7px; margin-top: 10px; padding: 2px 2px 8px;
+  overflow-x: auto; scroll-snap-type: x proximity; overscroll-behavior-x: contain;
+}
+.dateChip {
+  flex: 0 0 auto; scroll-snap-align: start;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 44px; padding: 7px 6px; border: 1px solid transparent; border-radius: 14px;
+  background: var(--z-inset); color: var(--z-muted); font: inherit; cursor: pointer;
+}
+.dateChip small { font-size: 10px; }
+.dateChip strong { font-size: 15px; color: var(--z-ink); }
+.dateChip.active { background: #99efe5; }
+.dateChip.dateStart { border-color: var(--z-green); }
+.dateChip.dateEnd { border-color: #b90538; }
+.calendar { margin-top: 10px; padding: 12px; border: 1px solid #d3daef; border-radius: 20px; background: #fff; }
+.calendarHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.calendarWeek, .calendarGrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.calendarWeek { margin-bottom: 4px; }
+.calendarWeek span { text-align: center; font-size: 11px; color: #6d7a72; }
+.calendarDay {
+  aspect-ratio: 1; border: 0; border-radius: 11px; background: transparent;
+  color: var(--z-ink); font: inherit; font-size: 13px; cursor: pointer;
+}
+.calendarDay:hover:not(:disabled), .calendarDay:focus-visible { background: #e1e8fd; outline: none; }
+.calendarDay:disabled { color: #b4bdb5; cursor: not-allowed; }
+.calendarDay.active { background: #99efe5; }
+.calendarDay.dateStart { border-radius: 11px 4px 4px 11px; background: var(--z-green); color: #fff; }
+.calendarDay.dateEnd { border-radius: 4px 11px 11px 4px; background: #b90538; color: #fff; }
+.calendarDay.today { box-shadow: inset 0 0 0 1px #6d7a72; }
+
+/* --- Breathing: a focus activity, not a page to scroll -------------------- */
+.breathOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+  background: linear-gradient(160deg, #f9f9ff 0%, #eef3ff 55%, #e6fbf4 100%);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.breathPanel {
+  width: min(100%, 560px);
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 26px;
+  outline: none;
+}
+.breathPanel > * { max-width: none; }
+.breathHint { display: flex; align-items: center; gap: 6px; color: #6d7a72; font-size: 12px; }
