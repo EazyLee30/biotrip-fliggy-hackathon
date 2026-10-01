@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "biotrip",
+  "compatibility_date": "2026-09-26",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "routes": [
+    {
+      "pattern": "biotrip.ccwu.cc",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "WHOOP_CLIENT_ID": "836f0014-7fb1-4a13-becb-ab4dab51a794",
+    "WHOOP_REDIRECT_URI": "https://biotrip.ccwu.cc/api/whoop/callback",
+    "BAILIAN_REGION": "cn-beijing",
+    "BAILIAN_PLANNING_MODE": "model",
+    "BAILIAN_PLAN_MODEL": "qwen3.7-flash",
+    "BAILIAN_WORKSPACE_ID": "llm-sdk0kiuxwrmb86l8",
+    "BAILIAN_AGENT_ID": "agent_01M3F56Y16F23ER53G0ADNGHQR",
+    "BAILIAN_ENVIRONMENT_ID": "env_NGU1Nzc1NjVmN2U4NDMyZm",
+    "BAILIAN_INSIGHT_AGENT_ID": "agent_01M3ES46BRAMKK5MJPCHZA4K15",
+    "BAILIAN_INSIGHT_ENVIRONMENT_ID": "env_ODE2ZTE4OTJkYmJhNGIxMD",
+    "BAILIAN_LOCAL_INFO_AGENT_ID": "agent_01M3F4SHFW27RS5P7024YN9QM4",
+    "BAILIAN_LOCAL_INFO_ENVIRONMENT_ID": "env_YzFmNDg1MGRkNWFhNDk4ZD",
+    "BAILIAN_FLYAI_VAULT_ID": "vlt_01M3JPR3Y0VKX51QYZJMJYR9AR",
+    "RESEND_FROM_EMAIL": "BioTrip <login@notify.biotrip.ccwu.cc>"
+  },
+  "d1_databases": [
+    {
+      "binding": "BIOTRIP_DB",
+      "database_name": "biotrip-users",
+      "database_id": "4010c5a8-aba4-4323-83e5-bc3bd76b00f9",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "main": "vinext/server/fetch-handler",
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "none",
+    "binding": "ASSETS"
+  }
+}

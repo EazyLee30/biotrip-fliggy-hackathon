@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "inverse-on-surface": "#edf0ff", "on-primary": "#ffffff", "outline-variant": "#bccac0", "surface-bright": "#f9f9ff", "primary-fixed": "#85f8c4", "surface-variant": "#dce2f7", "primary": "#006948", "secondary": "#006a63", "primary-fixed-dim": "#68dba9", "inverse-surface": "#293040", "on-tertiary-container": "#fffbff", "on-secondary-fixed-variant": "#00504a", "on-primary-container": "#f5fff7", "error-container": "#ffdad6", "on-secondary-container": "#006f67", "background": "#f9f9ff", "tertiary": "#b90538", "on-surface": "#141b2b", "surface-dim": "#d3daef", "tertiary-container": "#dc2c4f", "on-surface-variant": "#3d4a42", "secondary-container": "#99efe5", "on-primary-fixed-variant": "#005137", "error": "#ba1a1a", "tertiary-fixed": "#ffdadb", "on-secondary": "#ffffff", "surface-container-lowest": "#ffffff", "surface": "#f9f9ff", "on-tertiary-fixed-variant": "#92002a", "on-primary-fixed": "#002114", "surface-tint": "#006c4a", "secondary-fixed": "#9cf2e8", "on-secondary-fixed": "#00201d", "outline": "#6d7a72", "on-error": "#ffffff", "surface-container-highest": "#dce2f7", "on-tertiary-fixed": "#40000d", "on-background": "#141b2b", "tertiary-fixed-dim": "#ffb2b7", "on-tertiary": "#ffffff", "primary-container": "#00855d", "surface-container": "#e9edff", "inverse-primary": "#68dba9", "surface-container-high": "#e1e8fd", "on-error-container": "#93000a", "secondary-fixed-dim": "#80d5cb", "surface-container-low": "#f1f3ff" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "margin-desktop": "3rem", "margin-mobile": "1.25rem", "gutter": "1.5rem", "gutter-sm": "1rem", "space-sm": "0.5rem", "gutter-lg": "2rem", "space-xl": "2.5rem", "space-xs": "0.25rem", "margin": "2rem", "space-md": "1rem", "space-lg": "1.5rem" }, fontFamily: { "headline-sm": ["Plus Jakarta Sans"], "body-lg": ["Plus Jakarta Sans"], "label-md": ["Plus Jakarta Sans"], "headline-lg": ["Plus Jakarta Sans"], "body-sm": ["Plus Jakarta Sans"], "body-md": ["Plus Jakarta Sans"], "label-sm": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "display-hero-mobile": ["Plus Jakarta Sans"], "display-hero": ["Plus Jakarta Sans"], "numerical-metric": ["Plus Jakarta Sans"], "headline-lg-mobile": ["Plus Jakarta Sans"] }, fontSize: { "headline-sm": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "body-lg": ["18px", { "lineHeight": "28px", "letterSpacing": "-0.005em", "fontWeight": "400" }], "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600" }], "headline-lg": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.025em", "fontWeight": "600" }], "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }], "body-md": ["15px", { "lineHeight": "24px", "fontWeight": "400" }], "label-sm": ["11px", { "lineHeight": "16px", "letterSpacing": "0.04em", "fontWeight": "600" }], "headline-md": ["26px", { "lineHeight": "34px", "letterSpacing": "-0.015em", "fontWeight": "600" }], "display-hero-mobile": ["38px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "display-hero": ["56px", { "lineHeight": "64px", "letterSpacing": "-0.03em", "fontWeight": "700" }], "numerical-metric": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.03em", "fontWeight": "700" }], "headline-lg-mobile": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "600" }] } } } };</script><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#f9f9ff;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/85 backdrop-blur-xl shadow-[0_1px_8px_rgba(20,27,43,0.03)]"><div class="h-16 px-gutter flex items-center justify-between"><div class="flex flex-col justify-center"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[16px]">location_on</span><span class="font-headline-sm text-headline-sm text-on-surface">Tokyo, Day 1</span></div><span class="font-label-sm text-label-sm text-on-surface-variant leading-none">Today</span></div><div class="flex items-center gap-space-sm"><div class="h-7 px-space-sm rounded-full bg-secondary-container/40 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span><span class="material-symbols-outlined text-primary text-[14px]">sync</span><span class="font-label-sm text-label-sm text-on-secondary-container font-medium">Synced</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-28 bg-surface px-margin-mobile"><div class="flex flex-col w-full space-y-gutter">
+<!-- Profile Identity Bento Card -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col space-y-space-md relative overflow-hidden">
+<div class="absolute -right-12 -top-12 w-40 h-40 rounded-full bg-secondary-container/20 pointer-events-none blur-2xl"></div>
+<div class="flex items-start justify-between relative z-10">
+<div class="flex items-center gap-space-md">
+<!-- Visual Avatar with Japanese Minimalist Zen Framing -->
+<div class="relative w-16 h-16 rounded-full overflow-hidden bg-surface-container flex items-center justify-center shrink-0">
+<img class="w-full h-full object-cover" data-alt="Refined candid portrait of Alexander Vance in quiet morning light at a minimalist Kyoto cafe, wearing relaxed linen attire, gentle natural lighting with muted matcha tones and warm porcelain background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDm4lzctKoU-hCa3hBg3Qfulow60MtAqan9CELEFqJTBjq6TNc24RkN6DgD_edpk19RPXR5X8bV38xRL4S9uWeXe956LOte75_v8ZO0zH8ba6Qd_KtnxQdLddy9Ep2n9WiPa3Zt2LJEGt_MifRItNd6iNbgI_q4Z4b3zuzYaxMQv7UcZm8KRhsSDnCVlLRVwmLONy8dtSX_EiHagfBXxiLO9t3zD_qxgD7EGDiUh10mRAjJ6AYuJ6CffA"/>
+<div class="absolute inset-0 bg-primary/10 mix-blend-multiply pointer-events-none"></div>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-space-xs flex-wrap">
+<h1 class="font-headline-sm text-headline-sm text-on-surface truncate">Alexander Vance</h1>
+<span class="w-2 h-2 rounded-full bg-primary inline-block"></span>
+</div>
+<span class="font-label-sm text-label-sm text-primary font-semibold tracking-wide">REST MULTIPLIER: 1.4x</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate mt-0.5">Biometric Tier: Restorative Prime</span>
+</div>
+</div>
+<button aria-label="Edit Profile" class="w-9 h-9 rounded-full bg-surface-container-low flex items-center justify-center text-on-surface-variant active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[18px]">edit_note</span>
+</button>
+</div>
+<!-- Active Biometric Ribbon & Pill Indicators -->
+<div class="pt-space-xs flex flex-wrap gap-space-xs items-center relative z-10">
+<div class="inline-flex items-center gap-1.5 px-space-sm py-1 rounded-full bg-secondary-container/30 text-on-secondary-container">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-sm text-label-sm">WHOOP 5.0 • 94% Battery</span>
+</div>
+<div class="inline-flex items-center gap-1 px-space-sm py-1 rounded-full bg-surface-container-high text-on-surface-variant">
+<span class="material-symbols-outlined text-[13px] text-primary">schedule</span>
+<span class="font-label-sm text-label-sm">Tokyo GMT+9 (Synced)</span>
+</div>
+<div class="inline-flex items-center gap-1 px-space-sm py-1 rounded-full bg-primary-fixed/30 text-on-primary-fixed-variant">
+<span class="material-symbols-outlined text-[13px]">shield</span>
+<span class="font-label-sm text-label-sm">Circadian Safe</span>
+</div>
+</div>
+</div>
+<!-- High-Level Biometric Highlights (3 Micro-Bento Tiles) -->
+<div class="grid grid-cols-3 gap-space-xs">
+<!-- Stat 1 -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface-variant line-clamp-1">Relief Today</span>
+<span class="material-symbols-outlined text-primary text-[16px]">nature</span>
+</div>
+<div class="my-space-xs">
+<div class="font-numerical-metric text-numerical-metric text-on-surface leading-none tracking-tight">-3.4k</div>
+<span class="font-label-sm text-label-sm text-primary font-semibold">steps balanced</span>
+</div>
+<div class="w-full bg-surface-container h-1 rounded-full overflow-hidden mt-1">
+<div class="bg-primary h-full rounded-full" style="width: 78%"></div>
+</div>
+</div>
+<!-- Stat 2 -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface-variant line-clamp-1">HRV Base</span>
+<span class="material-symbols-outlined text-secondary text-[16px]">vital_signs</span>
+</div>
+<div class="my-space-xs">
+<div class="font-numerical-metric text-numerical-metric text-on-surface leading-none tracking-tight">98.4</div>
+<span class="font-label-sm text-label-sm text-secondary font-semibold">ms • optimal</span>
+</div>
+<div class="w-full bg-surface-container h-1 rounded-full overflow-hidden mt-1">
+<div class="bg-secondary h-full rounded-full" style="width: 92%"></div>
+</div>
+</div>
+<!-- Stat 3 -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface-variant line-clamp-1">Jet Lag Rate</span>
+<span class="material-symbols-outlined text-primary text-[16px]">bolt</span>
+</div>
+<div class="my-space-xs">
+<div class="font-numerical-metric text-numerical-metric text-on-surface leading-none tracking-tight">1.8x</div>
+<span class="font-label-sm text-label-sm text-primary font-semibold">accelerated</span>
+</div>
+<div class="w-full bg-surface-container h-1 rounded-full overflow-hidden mt-1">
+<div class="bg-primary h-full rounded-full" style="width: 65%"></div>
+</div>
+</div>
+</div>
+<!-- Travel Rhythm & Pacing Preference -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col space-y-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-7 h-7 rounded-full bg-primary-fixed/40 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[16px]">cloud_upload</span>
+</div>
+<h2 class="font-label-md text-label-md text-on-surface">Travel Pace Archetype</h2>
+</div>
+<span class="font-label-sm text-label-sm text-primary bg-primary-fixed/20 px-space-xs py-0.5 rounded-full font-medium">Self-Regulating</span>
+</div>
+<!-- Multi-Segmented Rhythm Pill Selector -->
+<div class="bg-surface-container-low p-1 rounded-xl flex items-center gap-1" id="pacing-selector">
+<button class="flex-1 py-2 rounded-lg font-label-sm text-label-sm transition-all text-on-surface-variant flex items-center justify-center gap-1" id="pace-btn-structured" onclick="selectPace('structured')">
+<span>Curated (J)</span>
+</button>
+<button class="flex-1 py-2 rounded-lg font-label-sm text-label-sm bg-surface-container-lowest text-on-surface font-semibold shadow-sm transition-all flex items-center justify-center gap-1" id="pace-btn-balanced" onclick="selectPace('balanced')">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>Balanced (0.4)</span>
+</button>
+<button class="flex-1 py-2 rounded-lg font-label-sm text-label-sm transition-all text-on-surface-variant flex items-center justify-center gap-1" id="pace-btn-fluid" onclick="selectPace('fluid')">
+<span>Fluid (P)</span>
+</button>
+</div>
+<!-- Contextual Explanation with Soft Zen Accent -->
+<div class="bg-surface-container-low rounded-xl p-space-md flex gap-space-sm items-start">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">spa</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant" id="pacing-desc">
+        Prioritizes reserved tea ceremonies &amp; dining slots while dynamically replacing strenuous mid-day walking legs with scenic tram or Ginza Line transit whenever metabolic fatigue spikes.
+      </p>
+</div>
+</div>
+<!-- Connected Wearables & Lifestyle Integration -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col space-y-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-7 h-7 rounded-full bg-secondary-container/40 flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary text-[16px]">sensors</span>
+</div>
+<h2 class="font-label-md text-label-md text-on-surface">Connected Devices &amp; Services</h2>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">2 Active</span>
+</div>
+<!-- WHOOP 5.0 Card -->
+<div class="bg-surface-container-low rounded-xl p-space-md flex items-center justify-between">
+<div class="flex items-center gap-space-md min-w-0">
+<div class="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-xs shrink-0">
+<span class="material-symbols-outlined text-primary text-[20px]">watch_wake</span>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-label-md text-label-md text-on-surface font-semibold truncate">WHOOP 5.0 Sensor</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Auto-Pacing Enabled • 2m ago</span>
+</div>
+</div>
+<!-- Tactile Micro-Switch -->
+<label class="relative inline-flex items-center cursor-pointer shrink-0">
+<input checked="" class="sr-only peer" id="toggle-whoop" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-xs"></div>
+</label>
+</div>
+<!-- Fliggy Travel Pass Integration -->
+<div class="bg-surface-container-low rounded-xl p-space-md flex items-center justify-between">
+<div class="flex items-center gap-space-md min-w-0">
+<div class="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-xs shrink-0">
+<span class="material-symbols-outlined text-primary text-[20px]">flight_takeoff</span>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="font-label-md text-label-md text-on-surface font-semibold truncate">Fliggy Pass (飞猪旅行)</span>
+<span class="font-label-sm text-label-sm text-primary px-1.5 py-0.2 rounded-full bg-secondary-container/40">VIP</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Lounge Fast-Transit Token Active</span>
+</div>
+</div>
+<div class="px-space-sm py-1 rounded-full bg-secondary-container/50 text-on-secondary-container font-label-sm text-label-sm font-semibold shrink-0">
+        Connected
+      </div>
+</div>
+<!-- Ambient Visual Card: Japanese Garden Sanctuary -->
+<div class="relative rounded-xl overflow-hidden h-28 w-full shadow-xs flex items-end p-space-md">
+<img class="absolute inset-0 w-full h-full object-cover" data-alt="Serene minimalist Japanese zen courtyard in Kyoto with raked gravel, smooth moss boulders, and gently filtered soft daylight through bamboo screens, clean architectural lines and tranquil green aesthetics" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBirK_xEPSHZ5jaiVgXqzLYfrly-RjKPoBeDqy_7ZpjMp7O03jKcesgghCECkEaHclBc4x6I9MhpkZApNNKiQ9gmWGi3-Vg0-a9iQtF3iE905RTkTS1c_E3nDGlh2jxr4OL8eJBU4yS3aPUEVSsf2jiV5W3aXmexj4OjxlqMIkGg-b2n1Tc7MDr0DIfQkik3ZcJEHNDtqXBcP_0QTX78NDMNP27X-xgBSrMxvJulIBcHNGWY8_mXtPqPw"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/80 via-on-surface/30 to-transparent"></div>
+<div class="relative z-10 text-on-primary">
+<div class="font-label-sm text-label-sm text-primary-fixed uppercase tracking-wider font-semibold">Ryokan Sanctuary Node</div>
+<div class="font-headline-sm text-headline-sm text-surface-container-lowest leading-tight">Suiran Bio-Recovery Suite</div>
+</div>
+</div>
+</div>
+<!-- Smart Travel Safeguards (Toggles with Clear Guidance) -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col space-y-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-7 h-7 rounded-full bg-primary-fixed/40 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[16px]">security</span>
+</div>
+<h2 class="font-label-md text-label-md text-on-surface">Circadian Safeguards</h2>
+</div>
+<span class="material-symbols-outlined text-outline text-[18px]">verified_user</span>
+</div>
+<!-- Safeguard 1 -->
+<div class="flex items-start justify-between gap-space-md pt-space-xs">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface font-medium">Fatigue Auto-Reroute</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 leading-snug">Automatically suggests express transit and shaded paths when recovery drops below 40%.</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-xs"></div>
+</label>
+</div>
+<div class="w-full h-px bg-surface-container-low"></div>
+<!-- Safeguard 2 -->
+<div class="flex items-start justify-between gap-space-md">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface font-medium">Protect Dining &amp; Bookings</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 leading-snug">Guarantees non-refundable reservations and omakase sittings remain fixed in itinerary.</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-xs"></div>
+</label>
+</div>
+<div class="w-full h-px bg-surface-container-low"></div>
+<!-- Safeguard 3 -->
+<div class="flex items-start justify-between gap-space-md pb-space-xs">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface font-medium">Offline Privacy Enclave</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 leading-snug">All sleep, HRV, and skin-temperature processing remains isolated strictly on your phone.</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-xs"></div>
+</label>
+</div>
+</div>
+<!-- Bottom Action Buttons -->
+<div class="flex flex-col gap-space-sm pt-space-xs">
+<button class="w-full h-12 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md flex items-center justify-center gap-space-xs shadow-sm active:scale-[0.99] transition-all" onclick="triggerSync(this)">
+<span class="material-symbols-outlined text-[18px]">sync</span>
+<span>Sync All Biometrics with Trek</span>
+</button>
+<button class="w-full h-10 rounded-lg text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center justify-center transition-colors">
+<span>Disconnect Wearables or Switch Account</span>
+</button>
+</div>
+</div>
+<!-- Client-side Interactive Pace & Sync Controller -->
+<script>
+  function selectPace(type) {
+    const btnStructured = document.getElementById('pace-btn-structured');
+    const btnBalanced = document.getElementById('pace-btn-balanced');
+    const btnFluid = document.getElementById('pace-btn-fluid');
+    const desc = document.getElementById('pacing-desc');
+
+    const defaultClass = "flex-1 py-2 rounded-lg font-label-sm text-label-sm transition-all text-on-surface-variant flex items-center justify-center gap-1";
+    const activeClass = "flex-1 py-2 rounded-lg font-label-sm text-label-sm bg-surface-container-lowest text-on-surface font-semibold shadow-sm transition-all flex items-center justify-center gap-1";
+
+    btnStructured.className = defaultClass;
+    btnBalanced.className = defaultClass;
+    btnFluid.className = defaultClass;
+
+    btnStructured.innerHTML = "<span>Curated (J)</span>";
+    btnBalanced.innerHTML = "<span>Balanced (0.4)</span>";
+    btnFluid.innerHTML = "<span>Fluid (P)</span>";
+
+    if (type === 'structured') {
+      btnStructured.className = activeClass;
+      btnStructured.innerHTML = "<span class='w-1.5 h-1.5 rounded-full bg-primary'></span><span>Curated (J)</span>";
+      desc.textContent = "Strictly honors reserved schedules with precise departure time notifications and scheduled recovery blocks in low-light environments.";
+    } else if (type === 'balanced') {
+      btnBalanced.className = activeClass;
+      btnBalanced.innerHTML = "<span class='w-1.5 h-1.5 rounded-full bg-primary'></span><span>Balanced (0.4)</span>";
+      desc.textContent = "Prioritizes reserved tea ceremonies & dining slots while dynamically replacing strenuous mid-day walking legs with scenic tram or Ginza Line transit whenever metabolic fatigue spikes.";
+    } else {
+      btnFluid.className = activeClass;
+      btnFluid.innerHTML = "<span class='w-1.5 h-1.5 rounded-full bg-primary'></span><span>Fluid (P)</span>";
+      desc.textContent = "Unanchored spontaneous wandering. Alerts only when approaching circadian boundaries or entering critical depletion zones.";
+    }
+  }
+
+  function triggerSync(btn) {
+    const icon = btn.querySelector('.material-symbols-outlined');
+    const text = btn.querySelector('span:last-child');
+    if (!icon || !text) return;
+    
+    icon.classList.add('animate-spin');
+    text.textContent = "Syncing Bio-Data...";
+    btn.disabled = true;
+
+    setTimeout(() => {
+      icon.classList.remove('animate-spin');
+      icon.textContent = "check_circle";
+      text.textContent = "Synced with WHOOP & Trek";
+      setTimeout(() => {
+        icon.textContent = "sync";
+        text.textContent = "Sync All Biometrics with Trek";
+        btn.disabled = false;
+      }, 2000);
+    }, 1200);
+  }
+
+  // Set Profile nav tab state
+  document.addEventListener('DOMContentLoaded', () => {
+    const navItems = document.querySelectorAll('nav [data-path]');
+    navItems.forEach(item => {
+      const icon = item.querySelector('.material-symbols-outlined');
+      const text = item.querySelector('.font-label-sm');
+      if (item.getAttribute('data-path') === 'profile') {
+        item.classList.add('text-primary', 'font-bold');
+        item.classList.remove('text-on-surface-variant');
+        if (icon) {
+          icon.style.fontVariationSettings = "'FILL' 1";
+        }
+      } else {
+        item.classList.remove('text-primary', 'font-bold');
+        item.classList.add('text-on-surface-variant');
+        if (icon) {
+          icon.style.fontVariationSettings = "'FILL' 0";
+        }
+      }
+    });
+  });
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe pointer-events-none" data-active-classes="text-primary font-bold"><div class="px-gutter-sm pb-space-sm pt-space-xs"><div class="pointer-events-auto mx-auto max-w-sm h-16 rounded-full bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_12px_32px_-4px_rgba(20,27,43,0.08)] flex items-center justify-around px-space-xs"><a class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors" data-path="today" href="#"><span class="material-symbols-outlined text-[22px]">sunny</span><span class="font-label-sm text-label-sm">Today</span></a><a class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors" data-path="adjust" href="#"><span class="material-symbols-outlined text-[22px]">tune</span><span class="font-label-sm text-label-sm">Adjust</span></a><a class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors" data-path="explore" href="#"><span class="material-symbols-outlined text-[22px]">explore</span><span class="font-label-sm text-label-sm">Explore</span></a><a class="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] gap-0.5 text-on-surface-variant hover:text-on-surface transition-colors" data-path="profile" href="#"><span class="material-symbols-outlined text-[22px]">account_circle</span><span class="font-label-sm text-label-sm">Profile</span></a></div></div></nav></body></html>

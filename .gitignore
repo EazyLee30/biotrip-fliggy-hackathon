@@ -1,5 +1,8 @@
 .DS_Store
 node_modules/
+.next/
+out/
+*.tsbuildinfo
 dist/
 build/
 coverage/
@@ -7,6 +10,9 @@ coverage/
 .env
 .env.*
 !.env.example
+.dev.vars*
 .trek-dev/
 data/
 uploads/
+.vinext/
+.wrangler/

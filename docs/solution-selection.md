@@ -1,80 +1,101 @@
 # BioTrip 方案选型
 
 **记录日期：2026-09-26**
+**选定方向：独立响应式 PWA + 百炼 Managed Agent + 官方 FlyAI Skill + 用户授权的 WHOOP OAuth**
 
-**选定方向：BioTrip 自适应行程 + TREK 插件 + FlyAI 商品搜索 + 手机优先 PWA**
+## 1. 产品定位
 
-## 1. 产品方向
+BioTrip 不是再生成一份完整攻略，而是把 WHOOP 身体状态、旅客自述的疲劳/压力和情绪、对颜色与环境氛围的个人联想，和已有日程放在一起规划。百炼 Agent 先理解这次想获得的感受，再保留预约和用户最想去的地方，优化步行/交通、恢复间隔和场所氛围；服务端校验硬约束，用户预览并确认。体验后的身体和情绪反馈还能改变下一段路线，形成持续的旅程闭环。
 
-最初备选包含 WorldLens（眼镜旅行 Agent）、Travel Guardian（异常事件后的整趟旅行恢复）、Vibe2Trip（从图片氛围找旅行）和 BioTrip（按身体状态调整行程）。本项目选 BioTrip：它有一个直观且可现场演示的闭环，同时能与现成旅行规划器衔接。航班延误、天气和交通中断作为后续的 Travel Guardian 触发源，不放入首个 MVP。
+这个方向既有可见的旅行场景，也把比赛要求的百炼 Managed Agent、FlyAI 真实旅行数据和完整可体验产品串成同一条手机端闭环。
 
-产品的差异点不是生成一份新行程，而是根据当日状态“温和地修复现有行程”：尽量保留固定预订与用户想去的地方，先调整移动方式和节奏，再移动明确可调整的项目。每项变化都显示前后对比、影响和理由，由用户确认。
+## 2. 应用外壳
 
-## 2. 应用与界面
-
-| 方案 | 好处 | 成本/风险 | 结论 |
+| 方案 | 优点 | 风险/代价 | 结论 |
 | --- | --- | --- | --- |
-| TREK + 官方插件 SDK | 复用行程、地图、拖动排序、PWA 手机外壳；插件能按授权读写行程，并触发行程实时更新 | 需先验证手机插件页面、SDK 权限和产品视觉融合 | **采用**：先做 trip-page 插件；若需要，再加 day-detail 小组件 |
-| 直接 fork 并改 TREK 核心 | 对界面和核心交互控制最大 | 工作量大、跟上游升级成本高；TREK 为 AGPL-3.0，网络服务改动需考虑源码提供要求 | 暂不采用；只有插件能力无法满足关键交互时再评估 |
-| 从零做独立 Next.js/PWA | 品牌和交互完全可控，发布路径熟悉 | 必须重做地图、行程、拖动、预订等成熟能力，挤压核心演示时间 | 暂不采用 |
+| 独立响应式 PWA | UI、WHOOP OAuth 和百炼调用在一个产品里；可按手机添加桌面优化；不用要求评委先安装另一个应用或插件 | 要自己实现最小行程/状态模型、响应式界面和安装体验 | **采用** |
+| TREK + BioTrip 插件 | 可复用现成旅行行程、地图和用户系统；插件能读写宿主行程 | 需要解决宿主账号、移动插件 UI、iframe 高度和许可边界；核心演示依赖另一个部署应用 | 不作为首个 MVP；规则优先后可评估与 TREK 导入/导出 |
+| 只在百炼控制台演示 Agent | 符合 Managed Agent 调试步骤，上手快 | WHOOP 授权、可安装 PWA、移动旅程和确认后编辑行程体验不足；难呈现完整产品 | 仅用于 Agent/Skill 调试，不作为最终产品 |
 
-选择插件路线不是放弃独立产品体验：BioTrip 主页面仍由项目自己设计，只把 TREK 当行程数据、地图、账号和手机应用外壳。TREK 插件 SDK 支持 trip-page、沙箱化 UI 和经授权的行程读写；官方示例的行程写操作能发出相同的实时更新事件。
+选用自建 PWA 是对原 TREK 插件方案的调整：规则强调百炼 Agent 和 FlyAI 的真实验证，用户明确要完整手机网页应用；独立外壳可直接展示 OAuth、数据说明和确认流程，不需要把产品体验埋在别的应用中。首版行程做完整最小闭环，不重做地图平台或预订交易系统。
 
-## 3. 项目技术分层
+## 3. 技术结构
 
-| 层 | MVP 方案 | 选型原因 |
+| 层 | MVP 选型 | 设计原则 |
 | --- | --- | --- |
-| PWA / 行程体验 | TREK 自托管应用 + BioTrip trip-page 插件 | TREK 已提供手机专用布局、PWA 安装能力、地图和旅行行程 |
-| BioTrip 自适应引擎 | Node.js/TypeScript 纯业务模块，先用确定性规则 | 同一输入得到同一结果；每项改动能说明原因；不把健康决策交给 LLM |
-| 插件 UI | TREK 插件 SDK 的内嵌页面，遵守宿主主题、安全区和窄屏布局 | 不 fork 核心 UI；可以在现有行程中查看、预览、确认调整 |
-| 飞猪商品 | 官方 FlyAI Skill/CLI 的服务端适配层 | 搜索 POI、酒店、机票等并呈现结构化结果和飞猪预订链接 |
-| 行程状态 | 继续使用 TREK 的行程/日程/地点 API；插件自有状态只存最少设置 | 避免另建一份行程数据库和同步逻辑 |
-| 演示健康输入 | 用户可切换的合成 Health Snapshot | 不阻塞 MVP 于可穿戴设备授权，也不需收集真实生理数据 |
-| 代码与协作 | 当前工作目录连接到 GitHub 私有仓库 | 支持完整代码、文档和后续开发记录；free-for-dev 收录 GitHub 私有仓库免费方案 |
+| 产品 UI | Next.js App Router + TypeScript，手机优先响应式 PWA | 单一网页产品；安全区、触控尺寸、manifest/图标和缓存壳都纳入验收 |
+| 应用 API | Next.js 服务端 Route Handlers | 浏览器只访问同源 API；客户端拿不到 WHOOP/百炼/FlyAI 凭证 |
+| WHOOP | OAuth 2.0 + 服务端 WHOOP v2 API 客户端 | 用户授权后按当前行程按需取最新周期和最近 7 天；不请求 `read:profile` |
+| 百炼 Agent | 三个 Managed Agent + Session/Event API + SSE | 无工具解读 Agent 接收 WHOOP/主观反馈；当地信息 Agent 只收城市与服务偏好；带 FlyAI Skill 的旅行 Agent 只拿旅行条件 |
+| 飞猪能力 | 百炼中安装官方 `alibaba-flyai/flyai-skill`，在 Managed Agent 环境安全配置 FlyAI API Key | 遵循比赛指定接入链路；真实搜索由 Agent 使用 Skill，前端和 WHOOP OAuth 服务端均不保存 FlyAI 凭证 |
+| 行程规则 | 服务端 TypeScript 校验器 + Agent 结构化建议 | 固定预约/时段/行程 ID 由代码硬校验；模型不可直接写库、下单或覆盖预约 |
+| MVP 行程状态 | 单用户、用户主动保存到当前设备 | 不保存 WHOOP 原始指标；当前版本不提供云端账号或云同步 |
+| 开发与运行 | GitHub 私有开发仓库；本地可复现启动；再验证免费 HTTPS 部署 | 源码不含密钥/个人健康数据；比赛提交前确保评委能访问仓库 |
 
-### BioTrip 决策规则
+百炼资料明确要求 API Key 和 Workspace ID 由服务端携带 Bearer Header，当前 Managed Agent API 地域为 `cn-beijing`。服务端创建 Session、先建立 SSE 订阅、再发送 Event 并等待回合结束；完整会话历史也作为事件保留，因此每个短时 Session 取回结果后请求删除。WHOOP 原始数据只进入无工具的解读 Agent；当地信息 Agent 只获得城市/日期/服务偏好；旅行 Agent 和 FlyAI Skill 只取得缩减后的旅行条件。
 
-引擎读取快照中的睡眠时长、恢复度、前日活动负荷，以及每日行程中的步行距离、活动时长、固定/灵活标记和预订约束。MVP 先使用透明阈值和规则，不声称是医学评分。规划顺序：
+### WHOOP scope 决策
 
-1. 锁定已预订、定时入场和用户标记为不可移动的项目。
-2. 身体预算不足时，先减少长距离步行；只有在路线来源可靠时才给出公交/步行/出租车方案。
-3. 加入用户可以删改的恢复休息时段。
-4. 仍超负荷时，按行程灵活度移动一个可调整项目。
-5. 必须补充低负荷体验时，调用 FlyAI 搜索；结果不足时明确显示“暂无实时结果”，不伪造库存。
-6. 展示变更预览；只在用户确认后写回 TREK，且可撤销或手动改回。
+完整相关健康指标使用：
 
-“结构稳定 ↔ 随机弹性”用连续滑杆表示：偏结构时优先维持原顺序和时段；偏弹性时可以移动非固定项目。滑杆不推断人格，也不能越过预订约束。
+- `read:recovery`：恢复评分、HRV、静息心率及可用的恢复测量。
+- `read:cycles`：周期负荷、心率、步数等；周期是生理周期，可能不等于午夜切日；`step_count` 可为空。
+- `read:sleep`：睡眠时长、阶段、表现与其他可用睡眠评分字段。
+- `read:workout`：锻炼负荷和活动数据。
+- `read:body_measurement`：WHOOP 可用的身高、体重和最大心率测量。
+- `offline`：获取可续期的 Refresh Token，不是健康数据授权范围。
 
-## 4. 免费服务与部署选择
+不申请 `read:profile`，不批量传送历史数据；规划请求将本次当前周期与近七日范围中实际返回的相关指标传给百炼。WHOOP API 没有独立压力值，`strain` 是生理活动负荷而非心理压力；疲劳/压力等主观感受由旅客自己报告。用户明确同意完整指标发给百炼，但每次连接/生成界面仍需透明展示数据流、数据范围、断开入口和“不是医疗建议”。
 
-用户指定的 free-for-dev 用于发现候选方案。该仓库本身是维护者整理的免费层目录，服务条款和免费额度会变；选定前仍需查提供方当时的官方条件。
+### 约束和 Agent 分工
 
-| 候选 | free-for-dev 收录能力 | 对本项目的匹配度 | 结论 |
-| --- | --- | --- | --- |
-| Oracle Cloud Free Tier VM | 免费 VM / 存储选项；清单提醒部分资源可能因判定闲置而回收 | 可运行 TREK Docker、保留持久化目录、支持 WebSocket；与 TREK 部署模型匹配 | **首选部署验证**：先检查注册、目标区域容量、实例 RAM、持久盘和可取得的 HTTPS 地址；不假设资源一定可申请 |
-| Cloudflare Pages / Workers / D1 | 静态托管、边缘函数和数据库的免费层 | 适合从零构建的轻型 Web/边缘应用；不能直接承载当前完整 TREK Docker 服务及其本地持久化方式 | 暂不作为 TREK 宿主；保留为后续拆分服务的选项 |
-| Vercel | Web 应用托管、HTTPS 和预览部署免费层 | 可以部署独立 Next.js 客户端，但仍需另找兼容的 TREK 服务端与持久化存储 | 不采用为整套应用的首选部署 |
-| Supabase / Neon 等 BaaS | 免费数据库、认证或存储层 | TREK 已有自己的旅行状态与插件数据机制，额外 BaaS 会引入重复状态 | MVP 不添加 |
+1. API 先从 WHOOP 读数据并构建一次性输入；无效/缺失字段保留为缺值，不填 0。
+2. Agent 收到健康指标、旅行偏好和日程，生成固定 schema 的候选动作与理由；也可通过 FlyAI Skill 搜索旅行替代项。
+3. Agent 调 FlyAI 时只提供旅行侧筛选项：目的地、日期、类别、预算、移动/无障碍条件、用户选择的氛围标签；不得把 WHOOP 数值、用户姓名或健康原始记录传进 Skill 参数。
+4. 服务端验证预约、时间顺序、同一活动不重复、用户 ID 和飞猪结果来源，再给前端差异预览。
+5. 用户确认后写入最小行程数据库。未确认、校验失败、拒绝、掉线或工具失败时均不改变原计划。
 
-首选部署拓扑是同一台 Docker VM 运行 TREK 与插件，浏览器通过 HTTPS 访问。先在本地 Docker 完成 POC，再验证 Oracle 免费 VM；若容量、冷启动、持续运行或 HTTPS 条件不满足，先保留本地可运行版本，并在确定供应商和费用后再部署，不自动开通付费服务。Cloudflare Tunnel/免费子域名作为 HTTPS 入口候选，须验证稳定性和 PWA 添加主屏幕流程。
+### 多感官与反馈闭环
 
-## 5. FlyAI 和数据安全
+用户带入这组灵感来自 GDG / 西岸美术馆现场分享的“感知的边界”与多感官体验资料：颜色、气味、情绪之间的联想；身体感受如何经由界面、记录和算法被理解；体验中的反馈与共同塑造；以及解释可能如何影响人对自己的理解。BioTrip 将它们作为交互设计线索，不把演讲中的探索或有限示例当成医学结论或普适心理定律。
 
-FlyAI 仓库文档说明提供命令行 Skill、自然语言搜索、分类搜索和可预订结果；基础搜索称可无密钥运行，增强结果可配置 API key。先从 server-side adapter 调用 POI 搜索和 keyword-search，再按比赛演示效果接入酒店/机票。密钥只放服务端环境变量，不发给浏览器、不提交仓库。
+1. **旅前定意图：**“我想平静下来 / 慢慢探索 / 获得活力 / 随心发现”，再选个人喜欢的空间色调和气味、声音、光线、拥挤度偏好或避讳。颜色只作为用户自己表达氛围联想的标签。
+2. **当下身体与心情：**WHOOP 提供实际存在的恢复、睡眠、心率、活动负荷等指标；“疲劳”和“压力”由用户自评，可随时修正，不从 HRV 自动推断心理状态。
+3. **空间和路线匹配：**路线综合考虑步行距离、坡度/交通和预约约束，也考虑用户选定的安静、绿意、气味刺激少、明亮/柔和等偏好。场所属性来自用户选择或可说明的数据，不让模型凭空断言感官事实。
+4. **体验后反馈：**用户用极短反馈记录身体更轻松/更累、心情更平静/更兴奋、喜欢/不喜欢的环境线索。Agent 以此微调下一段；更新长期偏好前由用户选择，偏好可查看、编辑、清除。
+5. **可解释呈现：**建议说明“基于你今天选择的慢节奏、这项活动的步行距离和上一站反馈”，避免“算法认定你焦虑/适合蓝色”这类可能影响自我理解的断言。
 
-首版只使用合成健康快照；引擎只取完成当次规划所需的字段，不把快照传给 FlyAI 或 LLM。真实 Whoop/Apple Health 授权、健康历史持久化、自动购买和无人值守修改均不属于 MVP。
+## 4. 部署和 free-for-dev
 
-## 6. 开源许可与仓库
+比赛强制的百炼资源不是完全免费：Managed Agent 运行中的会话费 0.5 元/小时；模型与工具/MCP 单独计费。官方有 10 小时运行时抵扣，30 天有效；FlyAI 的调用配额是另一套规则。需要做开发会话自动结束，限制工具调用，提交前检查云账单。
 
-TREK 官方仓库标注 AGPL-3.0，并说明将修改版 TREK 作为网络服务提供时，修改部分需按该许可开放。采用官方插件、尽量不改 TREK 核心以控制耦合；这不是法律结论。若提交公开比赛作品或将 BioTrip 作为网络服务开放体验，应在上线前复核所用代码边界、插件分发方式、源码提供要求和比赛对源码仓库的要求。此项目仓库按用户要求先设为私有；如果提交规则需要公开代码，届时按规则单独调整。
+应用选择 Cloudflare Workers + vinext，使用 `biotrip.ccwu.cc` Custom Domain、HTTPS WHOOP callback 和 Worker secrets。旅行方案只存用户当前设备，WHOOP OAuth 凭据使用加密 HttpOnly Cookie，因此当前单用户版本不需额外数据库保存刷新令牌或行程。Cloudflare Pages 只适用于静态导出，不承载本项目的 OAuth 和服务端 API。
 
-## 7. 参考资料
+Cloudflare 当前推荐 vinext 作为 Next.js Workers 路径，但 vinext 仍处于 beta。项目兼容性扫描、Worker 构建和 Wrangler dry-run 已通过；生产部署仍需完成 Cloudflare CLI OAuth 授权并注入平台 secrets。部署前后都应查看 Cloudflare、百炼和 FlyAI 实际计费与配额，不假设免费额度或无限运行时。
 
-- free-for-dev 免费服务目录：https://github.com/ripienaar/free-for-dev
-- TREK 主仓库及许可说明：https://github.com/liketrek/TREK
-- TREK 插件开发：https://github.com/liketrek/TREK/wiki/Plugin-Development
-- TREK 插件行程读写示例：https://github.com/liketrek/TREK/wiki/Plugin-Cookbook
-- FlyAI Skill：https://github.com/alibaba-flyai/flyai-skill
-- 飞猪黑客松门户（提交字段和规则以账号内参赛指南为准）：https://opc.aliyun.com/feizhu
+## 5. 数据安全、开源和提交
 
-以上线上资料核对时间：2026-09-26。
+- WHOOP 原始指标经用户明确授权发送给百炼无工具解读 Agent；旅行搜索链路只接收旅行筛选条件，不放 GitHub、演示视频或普通应用日志。
+- 百炼可能保留 Agent Session 的 Event 历史；每次任务完成后通过 API 删除 Session。删除会话不等于可承诺删除供应商所有后台副本。
+- OAuth `client_secret`、refresh token、百炼 API Key、FlyAI API Key 全在服务端密钥管理；仓库只提交 `.env.example` 占位符。
+- 应用不将百炼 Agent 输出直接作为数据库写入；结构校验和用户确认分别落实建议安全与最终授权。
+- 开发仓库仍是私有。比赛 Issue 要源码仓库链接；没找到指南明确要求 public，但评委必须有访问权限。提交前准备脱敏公开镜像/分支或确认官方可访问的评阅方式。
+- 报名条款含个人信息收集、向联合方传递和姓名/肖像/声音/作品宣传授权；没有提交或接受条款。比赛材料不上传核心秘密、凭证、医疗隐私或身份文件。
+
+## 6. 参考资料
+
+- [钉钉参赛指南](https://alidocs.dingtalk.com/i/nodes/QG53mjyd800agdlKHebwk4Zj86zbX04v)
+- [飞猪 AI 旅行创新大赛官网](https://opc.aliyun.com/feizhu)
+- [百炼 Managed Agents API](https://help.aliyun.com/zh/model-studio/managed-agents-api-overview)
+- [百炼 Managed Agents 会话与事件](https://help.aliyun.com/zh/model-studio/managed-agents-session-event)
+- [百炼 Managed Agents 计费](https://help.aliyun.com/zh/model-studio/managed-agents-billing)
+- [FlyAI 官方 Skill](https://github.com/alibaba-flyai/flyai-skill)
+- [WHOOP API 与 OAuth scopes](https://developer.whoop.com/api/)
+- [WHOOP OAuth 文档](https://developer.whoop.com/docs/developing/oauth/)
+- [WHOOP 开发入门（App、scope 和 redirect URI）](https://developer.whoop.com/docs/developing/getting-started/)
+- [WHOOP Recovery](https://developer.whoop.com/docs/developing/user-data/recovery/)
+- [WHOOP Cycle](https://developer.whoop.com/docs/developing/user-data/cycle/)
+- [WHOOP Sleep](https://developer.whoop.com/docs/developing/user-data/sleep/)
+- [free-for-dev 候选目录](https://github.com/ripienaar/free-for-dev)
+
+线上文档最近核对时间：2026-09-26。平台价格、比赛提交页面和开放平台配额可能变化，提交/部署当日再核实。
