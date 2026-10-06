@@ -16,7 +16,7 @@ export const STAGE_POLICIES: readonly StagePolicy[] = [
   {
     name: "health_insight",
     label: "身体节奏分析",
-    budgetMs: 75_000,
+    budgetMs: 45_000,
     grants: ["trip", "preferences", "self_report", "health_metrics"],
     degradable: true,
     required: false,
@@ -24,7 +24,7 @@ export const STAGE_POLICIES: readonly StagePolicy[] = [
   {
     name: "local_research",
     label: "目的地信息检索",
-    budgetMs: 120_000,
+    budgetMs: 30_000,
     grants: ["trip", "preferences"],
     degradable: true,
     required: false,
@@ -42,14 +42,18 @@ export const STAGE_POLICIES: readonly StagePolicy[] = [
     degradable: false,
     required: true,
   },
+  { name: "poi_catalog", label: "目的地实景检索", budgetMs: 12_000, grants: ["trip"], degradable: true, required: false },
   {
     name: "compose_plan",
     label: "行程编排",
-    budgetMs: 180_000,
+    budgetMs: 90_000,
     grants: ["trip", "preferences", "self_report"],
     degradable: false,
     required: true,
   },
+  { name: "relief_inventory", label: "舒缓货架检索", budgetMs: 45_000, grants: ["trip", "itinerary"], degradable: true, required: false },
+  { name: "mobility", label: "出行顾问", budgetMs: 35_000, grants: ["trip", "itinerary"], degradable: true, required: false },
+  { name: "compose_adjustments", label: "调整建议编排", budgetMs: 45_000, grants: ["trip", "itinerary", "preferences", "self_report"], degradable: true, required: false },
 ] as const;
 
 export const STAGE_BY_NAME: Record<PlanStage, StagePolicy> = Object.fromEntries(
@@ -57,7 +61,7 @@ export const STAGE_BY_NAME: Record<PlanStage, StagePolicy> = Object.fromEntries(
 ) as Record<PlanStage, StagePolicy>;
 
 /** Total wall-clock ceiling for one planning request. */
-export const PLAN_BUDGET_MS = 360_000;
+export const PLAN_BUDGET_MS = 180_000;
 
 /** Advisory stages that may run concurrently with each other. */
 export const ADVISORY_STAGES: readonly PlanStage[] = ["health_insight", "local_research"];

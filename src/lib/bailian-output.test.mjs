@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadModule, plain } from "./test-support/module-loader.mjs";
 
-const { consumeAgentResponse, parseJsonText, parsePlan } = loadModule("lib/bailian-output.ts", {
-  "./bailian-evidence": loadModule("lib/bailian-evidence.ts"),
+const { consumeAgentResponse, parseJsonText, parsePlan, AgentOutputError } = loadModule("lib/bailian-output.ts", {
+  "./bailian-evidence": loadModule("lib/bailian-evidence.ts", {
+    "./planning/flyai-sources": loadModule("lib/planning/flyai-sources.ts", { "../product-image": loadModule("lib/product-image.ts") }),
+  }),
 });
+const { normalizePlannerError } = loadModule("lib/planning/contract.ts");
 
 const message = (id, text) => ({
   object: "message", id, role: "assistant", type: "message", status: "completed",
@@ -108,13 +111,51 @@ test("structured plan with no changes is accepted and fixed entries are preserve
 });
 
 test("missing or invalid fields and changed fixed entries still fail", () => {
-  for (const patch of [
-    { adjustments: undefined }, { adjustments: [null] }, { summary: "" },
-    { reason: " " }, { itinerary: [] },
+  for (const [patch, code] of [
+    [{ adjustments: undefined }, "INVALID_PLAN_ADJUSTMENTS"],
+    [{ adjustments: [null] }, "INVALID_PLAN_ADJUSTMENTS"],
+    [{ summary: "" }, "INCOMPLETE_TRAVEL_PLAN"],
+    [{ reason: " " }, "INCOMPLETE_TRAVEL_PLAN"],
+    [{ itinerary: [] }, "INCOMPLETE_TRAVEL_PLAN"],
+    [{ itinerary: [{ ...validPlan.itinerary[0], detail: undefined, details: "Incorrect output field" }] }, "INCOMPLETE_TRAVEL_PLAN"],
   ]) {
-    assert.throws(() => parsePlan(JSON.stringify({ ...validPlan, ...patch }), []));
+    assert.throws(() => parsePlan(JSON.stringify({ ...validPlan, ...patch }), []), { code });
   }
-  assert.throws(() => parsePlan(JSON.stringify(validPlan), [{ time: "09:00", name: "已确认活动", fixed: true }]));
+  assert.throws(() => parsePlan(JSON.stringify(validPlan), [{ time: "09:00", name: "已确认活动", fixed: true }]), { code: "FIXED_SCHEDULE_NOT_PRESERVED" });
+});
+
+test("output failures retain a static identity through pipeline normalisation without leaking response text", () => {
+  const privateOutput = "private-model-response-with-health-or-token";
+  for (const [run, code] of [
+    [() => parseJsonText(`{${privateOutput}`), "INVALID_AGENT_JSON"],
+    [() => parseJsonText(JSON.stringify([privateOutput])), "INVALID_AGENT_STRUCTURED_DATA"],
+    [() => parsePlan(JSON.stringify({ ...validPlan, adjustments: privateOutput }), []), "INVALID_PLAN_ADJUSTMENTS"],
+    [() => parsePlan(JSON.stringify({ ...validPlan, summary: "" }), []), "INCOMPLETE_TRAVEL_PLAN"],
+    [() => parsePlan(JSON.stringify(validPlan), [{ time: "09:00", name: privateOutput, fixed: true }]), "FIXED_SCHEDULE_NOT_PRESERVED"],
+  ]) {
+    let failure;
+    try { run(); } catch (error) { failure = error; }
+    assert.ok(failure instanceof AgentOutputError);
+    assert.equal(failure.code, code);
+    assert.equal(failure.message, code);
+    assert.ok(!String(failure.stack).includes(privateOutput));
+    const normalized = normalizePlannerError("compose_plan", "agent_output", failure);
+    assert.equal(normalized.code, code);
+    assert.equal(normalized.status, 502);
+    assert.equal(normalized.stage, "compose_plan");
+    assert.ok(!JSON.stringify(normalized).includes(privateOutput));
+  }
+});
+
+test("invalid calendar dates have a typed error and valid leap dates preserve dated reservations", () => {
+  for (const date of ["2026-99-01", "2026-02-30", "2026-13-01", "2026-00-00", "2026-10-10 trailing-data"]) {
+    assert.throws(() => parsePlan(JSON.stringify({ ...validPlan, itinerary: [{ ...validPlan.itinerary[0], date }] }), []), { code: "INVALID_PLAN_DATE" });
+  }
+  const itinerary = [{ ...validPlan.itinerary[0], date: "2028-02-29" }];
+  assert.equal(parsePlan(JSON.stringify({ ...validPlan, itinerary }), itinerary).itinerary[0].date, "2028-02-29");
+  for (const patch of [{ date: "2028-03-01" }, { name: "Renamed reservation" }, { time: "11:00" }, { fixed: false }]) {
+    assert.throws(() => parsePlan(JSON.stringify({ ...validPlan, itinerary: [{ ...itinerary[0], ...patch }] }), itinerary), { code: "FIXED_SCHEDULE_NOT_PRESERVED" });
+  }
 });
 
 test("untrusted non-HTTPS sources stay excluded", () => {

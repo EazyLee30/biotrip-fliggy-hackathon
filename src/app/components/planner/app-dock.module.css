@@ -1,0 +1,8 @@
+.dock { position:fixed; z-index:30; bottom:max(12px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); display:grid; grid-template-columns:repeat(4,1fr); width:min(calc(100% - 32px),440px); padding:6px; border:1px solid #dfe5dc; border-radius:24px; background:#fffefaf2; box-shadow:0 8px 28px #2738300d; backdrop-filter:blur(16px); }
+.dock button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:52px; border:0; border-radius:18px; color:#637166; background:transparent; font:inherit; font-size:12px; cursor:pointer; transition:background 150ms,color 150ms,transform 90ms; -webkit-tap-highlight-color:transparent; }
+.dock button[aria-current=page] { background:#e7eee5; color:#2f6654; }
+.dock button:active:not(:disabled) { transform:scale(.98); }
+.dock button:disabled { opacity:.55; }
+.dock button:focus-visible { outline:2px solid #2f6654; outline-offset:2px; }
+@media(min-width:1200px) { .dock { top:116px; bottom:auto; left:24px; width:150px; transform:none; grid-template-columns:1fr; border-radius:20px; } .dock button { flex-direction:row; justify-content:flex-start; padding:0 18px; gap:12px; font-size:14px; } }
+@media(prefers-reduced-motion:reduce) { .dock button { transition:none; } .dock button:active:not(:disabled) { transform:none; } }

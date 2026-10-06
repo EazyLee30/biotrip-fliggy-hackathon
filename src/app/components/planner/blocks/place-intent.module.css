@@ -1,0 +1,8 @@
+.days { display:flex; gap:8px; min-width:0; overflow-x:auto; padding:3px 2px 8px; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; }
+.days button { flex:0 0 auto; display:grid; gap:4px; min-width:92px; min-height:56px; padding:8px 12px; border:1px solid #dbe1f1; border-radius:14px; background:#fff; color:#3d4a45; font:inherit; cursor:pointer; scroll-snap-align:center; }
+.days button[aria-pressed=true] { background:#dff8ee; border-color:#006948; color:#006948; }
+.days small { color:#6d7a72; font-size:11px; }
+.days button:focus-visible { outline:2px solid #006948; outline-offset:2px; }
+.wheels { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:12px; }
+.wheels > span { font-size:24px; color:#006948; }
+.error { color:#b90538; }

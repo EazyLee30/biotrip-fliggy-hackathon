@@ -3,7 +3,8 @@
   "name": "biotrip",
   "compatibility_date": "2026-09-26",
   "compatibility_flags": [
-    "nodejs_compat"
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
   ],
   "routes": [
     {
@@ -16,7 +17,8 @@
     "WHOOP_REDIRECT_URI": "https://biotrip.ccwu.cc/api/whoop/callback",
     "BAILIAN_REGION": "cn-beijing",
     // "auto" prefers Bailian Managed Agents (the competition requirement) and falls
-    // back to the plain model API. Pin to "managed" or "model" to disable fallback.
+    // chooses the model API only when agent configuration is incomplete. Runtime
+    // errors do not switch the whole provider. Pin to "managed" or "model" when needed.
     "BAILIAN_PLANNING_MODE": "auto",
     "BAILIAN_PLAN_MODEL": "qwen3.7-flash",
     "BAILIAN_WORKSPACE_ID": "llm-sdk0kiuxwrmb86l8",
@@ -26,6 +28,11 @@
     "BAILIAN_INSIGHT_ENVIRONMENT_ID": "env_ODE2ZTE4OTJkYmJhNGIxMD",
     "BAILIAN_LOCAL_INFO_AGENT_ID": "agent_01M3F4SHFW27RS5P7024YN9QM4",
     "BAILIAN_LOCAL_INFO_ENVIRONMENT_ID": "env_YzFmNDg1MGRkNWFhNDk4ZD",
+    "BAILIAN_COMPOSE_AGENT_ID": "agent_01M3YCDXRYMBPWQ6S5BETYTFNP",
+    "BAILIAN_COMPOSE_ENVIRONMENT_ID": "env_ODE2ZTE4OTJkYmJhNGIxMD",
+    "BAILIAN_MOBILITY_AGENT_ID": "agent_01M4612XCPRXEA0CMCRCVQS1XZ",
+    "BAILIAN_MOBILITY_ENVIRONMENT_ID": "env_ZWIzNGIxNGViN2Y4NDViNG",
+    "BAILIAN_MOBILITY_MCP_SERVER_ID": "amap-maps",
     "BAILIAN_FLYAI_VAULT_ID": "vlt_01M3JPR3Y0VKX51QYZJMJYR9AR",
     "RESEND_FROM_EMAIL": "BioTrip <login@notify.biotrip.ccwu.cc>"
   },
@@ -37,7 +44,15 @@
       "migrations_dir": "migrations"
     }
   ],
-  "main": "vinext/server/fetch-handler",
+  "workflows": [
+  {
+    "binding": "BIOTRIP_PLANNING",
+    "name": "biotrip-planning",
+    "class_name": "PlanningWorkflow"
+  }
+],
+  "triggers": {"crons": ["17 * * * *"]},
+  "main": "src/workers/app.ts",
   "assets": {
     "directory": "dist/client",
     "not_found_handling": "none",

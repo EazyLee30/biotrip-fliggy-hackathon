@@ -16,3 +16,5 @@ data/
 uploads/
 .vinext/
 .wrangler/
+.playwright-cli/
+output/playwright/

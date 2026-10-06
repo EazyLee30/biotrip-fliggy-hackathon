@@ -1,8 +1,17 @@
 import { bailianRequest, deleteBailianSession, type BailianConfig } from "@/lib/bailian";
 import { AgentStreamError, consumeAgentResponse, parseJsonText, parsePlan, safeHttpsUrl } from "@/lib/bailian-output";
-import { createToolEvidence, type ToolEvidence } from "@/lib/bailian-evidence";
+import { createToolEvidence, type FlyaiEvidenceCommand, type ToolEvidence } from "@/lib/bailian-evidence";
 import { composePlanPrompt, healthInsightPrompt, localResearchPrompt } from "../prompts";
-import { flyaiInventory } from "./bailian-model";
+import { bindPlanPlaces, flyaiInventory } from "./bailian-model";
+import { flyaiInventoryPrompt, skillInventoryQueries } from "../inventory";
+import { consumeInventoryStream } from "../inventory-stream";
+import { adjustmentPrompt, reliefQueries } from "../adjust-prompts";
+import { searchFlyai } from "@/lib/flyai";
+import { createMobilityEvidence, mobilityLegs, mobilityPrompt } from "../mobility";
+import type { RouteFact } from "../../adjust/validate";
+import { abstractHealth } from "../adjust-health";
+import { STAGE_BY_NAME } from "../stages";
+import { validateComposedPlan } from "../validation";
 import {
   PlannerError,
   normalizePlannerError,
@@ -18,13 +27,44 @@ import {
   type StageContext,
 } from "../contract";
 
-type AgentKind = "insight" | "local" | "travel";
+type AgentKind = "insight" | "local" | "travel" | "compose" | "mobility";
 
-type AgentSessionResult = { text: string; evidence: ToolEvidence };
+type AgentSessionResult = { text: string; evidence: ToolEvidence; routes?: RouteFact[] };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+/** Validate both legacy references and the documented toolkit-based MCP snapshot. */
+function verifiedMobilitySnapshot(agent: unknown, expectedServer: string): boolean {
+  if (!isRecord(agent) || !Array.isArray(agent.skills) || agent.skills.length || !Array.isArray(agent.tools) || !Array.isArray(agent.mcp_servers) || agent.mcp_servers.length !== 1) return false;
+  const server = agent.mcp_servers[0];
+  if (typeof server === "string" || (isRecord(server) && typeof server.id === "string")) {
+    return (typeof server === "string" ? server : server.id) === expectedServer && agent.tools.length === 0;
+  }
+  if (!isRecord(server) || server.type !== "official" || server.name !== expectedServer) return false;
+  const allowed = new Set(["maps_text_search", "maps_search_detail", "maps_direction_walking", "maps_direction_driving", "maps_direction_transit_integrated"]);
+  let mapToolkit = false;
+  for (const toolkit of agent.tools) {
+    if (!isRecord(toolkit) || !isRecord(toolkit.default_config) || toolkit.default_config.enabled !== false || !Array.isArray(toolkit.configs)) return false;
+    if (toolkit.type === "builtin_toolkit") {
+      if (toolkit.configs.some(config => !isRecord(config) || config.enabled !== false)) return false;
+    } else if (toolkit.type === "mcp_toolkit" && toolkit.mcp_server_name === expectedServer && !mapToolkit) {
+      mapToolkit = true;
+      const enabled = new Set<string>();
+      for (const config of toolkit.configs) {
+        if (!isRecord(config) || typeof config.name !== "string" || typeof config.enabled !== "boolean") return false;
+        if (!config.enabled) continue;
+        if (!allowed.has(config.name) || enabled.has(config.name)) return false;
+        const policy = config.permission_policy ?? toolkit.default_config.permission_policy;
+        if (policy !== undefined && (!isRecord(policy) || policy.type !== "always_allow")) return false;
+        enabled.add(config.name);
+      }
+      if (enabled.size !== allowed.size) return false;
+    } else return false;
+  }
+  return mapToolkit;
+}
+
 function safeErrorCode(value: unknown) {
   return typeof value === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(value) ? value : null;
 }
@@ -57,9 +97,15 @@ async function consumeAgentStream(
   sessionId: string,
   startedAt: number,
   evidenceSatisfies: (evidence: ToolEvidence) => boolean,
+  mobilityEvidence?: ReturnType<typeof createMobilityEvidence>,
 ): Promise<AgentSessionResult> {
   try {
-    const evidence = createToolEvidence(stage);
+    const base = createToolEvidence(stage);
+    const evidence = mobilityEvidence ? { ...base, accept(event: Parameters<typeof base.accept>[0]) {
+      const failureCode = mobilityEvidence.accept(event);
+      const observation = base.accept(event);
+      return failureCode ? { ...observation, failureCode } : observation;
+    } } : base;
     const text = await consumeAgentResponse(streamResponse, controller, (event) => {
       if (["tool_call", "tool_call_output", "mcp_call", "mcp_call_output", "session_status", "error"].includes(event.type)) {
         // Prompts, tool arguments and tool output never enter logs.
@@ -67,10 +113,11 @@ async function consumeAgentStream(
       }
     }, evidence);
     const verified = evidence.result();
+    if (mobilityEvidence && !mobilityEvidence.result().length) throw new AgentStreamError("NO_VERIFIED_AMAP_ROUTE");
     if (!evidenceSatisfies(verified)) throw new AgentStreamError(stage === "local_research" ? "NO_VERIFIED_WEB_SEARCH" : "NO_VERIFIED_FLYAI_SEARCH");
-    const { sourceUrls, ...counts } = verified;
-    console.info("[BioTrip tool evidence]", { requestId, stage, sessionId, ...counts, sourceUrlCount: sourceUrls.length });
-    return { text, evidence: verified };
+    const { sourceUrls, flyaiSources, flyaiCategories, emptyFlyaiCategories, ...counts } = verified;
+    console.info("[BioTrip tool evidence]", { requestId, stage, sessionId, ...counts, sourceUrlCount: sourceUrls.length, inventoryCount: flyaiSources.length, verifiedCategoryCount: flyaiCategories.length, emptyCategoryCount: emptyFlyaiCategories.length });
+    return { text, evidence: verified, ...(mobilityEvidence ? { routes: mobilityEvidence.result() } : {}) };
   } catch (error) {
     if (error instanceof AgentStreamError) throw new PlannerError(stage, "agent_stream", 502, error.code, null, degradable);
     throw error;
@@ -80,13 +127,13 @@ async function consumeAgentStream(
 /**
  * One short-lived Bailian Managed Agent session.
  *
- * Sessions are deleted immediately after their result is read, so the provider's
- * retained event history does not outlive the request.
+ * Session deletion is attempted immediately after the result is read. Logs
+ * distinguish confirmed cleanup from an unconfirmed provider or network error.
  */
-async function runAgentSession(
+export async function runAgentSession(
   config: BailianConfig,
   stage: PlanStage,
-  target: { agentId: string; environmentId: string; title: string; requireNoTools?: boolean; vaultIds?: string[] },
+  target: { agentId: string; environmentId: string; title: string; requireNoTools?: boolean; vaultIds?: string[]; requireMcpServerId?: string },
   prompt: string,
   budgetMs: number,
   degradable: boolean,
@@ -94,6 +141,10 @@ async function runAgentSession(
   requestId: string,
   progress: (event: { stage: string; message?: string }) => void,
   evidenceSatisfies: (evidence: ToolEvidence) => boolean,
+  inventoryCommands?: readonly FlyaiEvidenceCommand[],
+  sessionCreated?: StageContext["sessionCreated"],
+  inventoryAvailable?: StageContext["inventoryAvailable"],
+  mobilityEvidence?: ReturnType<typeof createMobilityEvidence>,
 ): Promise<AgentSessionResult> {
   let sessionId: string | null = null;
   let operation = "session_create";
@@ -133,14 +184,22 @@ async function runAgentSession(
       throw new PlannerError(stage, operation, 502, "INVALID_SESSION_RESPONSE", null, degradable);
     }
     sessionId = created.id;
-    // The health agent must have no tools at all, checked against the session
+    await sessionCreated?.(stage, sessionId);
+    // Health interpretation and composition must have no tools, checked against the session
     // snapshot the provider actually created rather than a local assumption.
     if (target.requireNoTools && (
       !Array.isArray(created.agent?.tools) || created.agent.tools.length > 0 ||
+      (["compose_plan", "compose_adjustments"].includes(stage) && (!Array.isArray(created.agent.skills) || !Array.isArray(created.agent.mcp_servers))) ||
       (Array.isArray(created.agent.skills) && created.agent.skills.length > 0) ||
       (Array.isArray(created.agent.mcp_servers) && created.agent.mcp_servers.length > 0)
     )) {
-      throw new PlannerError(stage, "agent_config", 503, "HEALTH_AGENT_HAS_TOOLS", null, false);
+      throw new PlannerError(stage, "agent_config", 503,
+        ["compose_plan", "compose_adjustments"].includes(stage) ? "COMPOSE_AGENT_HAS_TOOLS" : "HEALTH_AGENT_HAS_TOOLS", null, false);
+    }
+    if (target.requireMcpServerId) {
+      if (!verifiedMobilitySnapshot(created.agent, target.requireMcpServerId)) {
+        throw new PlannerError(stage, "agent_config", 503, "MOBILITY_AGENT_MCP_MISMATCH", null, true);
+      }
     }
     operation = "stream_open";
     log("started");
@@ -160,7 +219,13 @@ async function runAgentSession(
     if (!eventResponse.ok) throw await providerFailure(stage, operation, eventResponse, degradable);
     operation = "agent_stream";
     log("started");
-    const result = await consumeAgentStream(streamResponse, controller, stage, degradable, requestId, sessionId, startedAt, evidenceSatisfies);
+    const result = inventoryCommands
+      ? { text: "", evidence: await consumeInventoryStream(streamResponse, controller, inventoryCommands, (event) => {
+          if (["tool_call", "tool_call_output", "session_status", "error"].includes(event.type)) {
+            console.info("[BioTrip agent event]", { requestId, stage, sessionId, elapsedMs: Date.now() - startedAt, ...event });
+          }
+        }, inventoryAvailable) }
+      : await consumeAgentStream(streamResponse, controller, stage, degradable, requestId, sessionId, startedAt, evidenceSatisfies, mobilityEvidence);
     log("completed");
     return result;
   } catch (error) {
@@ -179,45 +244,44 @@ async function runAgentSession(
     controller.abort();
     if (sessionId) {
       log("cleanup_started");
-      await deleteBailianSession(config, sessionId);
-      log("cleanup_completed");
+      const cleanup = await deleteBailianSession(config, sessionId);
+      log(cleanup.confirmed ? "cleanup_completed" : "cleanup_failed", { status: cleanup.status });
     }
   }
 }
 
-function parseLocalServices(text: string, sourceUrls: string[]): LocalService[] {
+function parseLocalServices(text: string, sourceUrls: string[]): Pick<LocalResearch, "services" | "unverifiedCount"> {
   const parsed = parseJsonText(text);
   const list = Array.isArray(parsed.services) ? parsed.services : [];
   const verified = new Set(sourceUrls);
-  return list.filter(isRecord).slice(0, 6).map((item) => {
+  let unverifiedCount = 0;
+  const services = list.filter(isRecord).slice(0, 6).map((item) => {
     const sourceUrl = safeHttpsUrl(item.source_url);
     if (!sourceUrl || typeof item.name !== "string" || typeof item.kind !== "string" ||
-      typeof item.detail !== "string" || typeof item.source !== "string") return null;
-    if (!verified.has(sourceUrl)) throw new PlannerError("local_research", "agent_output", 502, "UNVERIFIED_SOURCE_URL", null, true);
+      typeof item.detail !== "string" || typeof item.source !== "string" || !verified.has(sourceUrl)) {
+      unverifiedCount += 1;
+      return null;
+    }
     return {
       name: item.name.slice(0, 180), kind: item.kind.slice(0, 80),
       detail: item.detail.slice(0, 500), source: item.source.slice(0, 160), sourceUrl,
     };
   }).filter((item): item is LocalService => item !== null);
+  return { services, unverifiedCount };
 }
-
-const FLYAI_SKILL_RULE = [
-  "CLI 已安装。为兼容 Vault 必须通过 BioTrip 只读签名网关调用，命令固定前缀",
-  'DEBUG_FLYAI_MCP_URL=https://biotrip.ccwu.cc/api/flyai/mcp flyai keyword-search --query "目的地及当前所需类别"。',
-  "最多 4 次真实搜索，通常 1–2 次足够；不要查环境、凭证、登录或安装，不要重复 help。",
-  "官方 CLI 的 status=0、message=success 表示成功。命令失败时停止并返回错误说明。",
-].join("");
 
 /**
  * Bailian Managed Agents provider — the transport the competition requires.
  *
- * The travel agent searches FlyAI with the official Skill and composes the plan
- * in a single session, because splitting them would double both the runtime
- * cost and the latency for no additional evidence. `composePlan` therefore reads
- * back the session the inventory stage already paid for.
+ * Inventory uses the official Skill and reads actual tool output. Composition
+ * waits for all independent stages and receives their granted context once.
  */
 export function createAgentProvider(config: BailianConfig): PlanningProvider {
   const target = (kind: AgentKind) => {
+    if (kind === "mobility") {
+      if (!config.mobilityAgentId || !config.mobilityEnvironmentId || !config.mobilityMcpServerId) return null;
+      return { agentId: config.mobilityAgentId, environmentId: config.mobilityEnvironmentId, title: "BioTrip 高德出行顾问", requireMcpServerId: config.mobilityMcpServerId };
+    }
     if (kind === "insight") {
       if (!config.insightAgentId || !config.insightEnvironmentId) return null;
       return { agentId: config.insightAgentId, environmentId: config.insightEnvironmentId, title: "BioTrip 身体信号解读", requireNoTools: true };
@@ -226,23 +290,39 @@ export function createAgentProvider(config: BailianConfig): PlanningProvider {
       if (!config.localInfoAgentId || !config.localInfoEnvironmentId) return null;
       return { agentId: config.localInfoAgentId, environmentId: config.localInfoEnvironmentId, title: "BioTrip 目的地服务检索" };
     }
+    if (kind === "compose") {
+      const environmentId = config.composeEnvironmentId || config.insightEnvironmentId || config.environmentId;
+      if (!config.composeAgentId || !environmentId) return null;
+      return { agentId: config.composeAgentId, environmentId, title: "BioTrip 已核验来源行程编排", requireNoTools: true };
+    }
     return { agentId: config.agentId, environmentId: config.environmentId, title: "BioTrip 实时旅行编排", vaultIds: config.flyaiVaultId ? [config.flyaiVaultId] : [] };
   };
-
-  // Memoised per request so the composing stage reuses the inventory session.
-  let travelSession: ComposedPlan | null = null;
 
   return {
     id: "managed_agent",
     assertConfigured() {
-      if (!target("travel")) throw new Error("Managed Agents are not configured.");
+      if (!target("compose")) throw new PlannerError("compose_plan", "agent_config", 503, "COMPOSE_AGENT_NOT_CONFIGURED");
+      if (!config.agentId || !config.environmentId || !config.flyaiVaultId || !target("local")) {
+        throw new Error("Managed Agents are not configured.");
+      }
     },
 
+    async mobility(ctx: StageContext) {
+      const mobility = target("mobility");
+      if (!mobility) throw new PlannerError("mobility", "agent_config", 503, "MOBILITY_AGENT_NOT_CONFIGURED", null, true);
+      const legs = mobilityLegs(ctx);
+      if (!legs.length) throw new PlannerError("mobility", "route_scope", 422, "NO_ROUTABLE_LEG", null, true);
+      const city = ctx.input.trip!.destinationCity;
+      const collector = createMobilityEvidence(city, legs);
+      const result = await runAgentSession(config, "mobility", mobility, mobilityPrompt(city, legs), STAGE_BY_NAME.mobility.budgetMs,
+        true, ctx.signal, ctx.requestId, ctx.progress, () => true, undefined, ctx.sessionCreated, undefined, collector);
+      return { routes: result.routes ?? [], requestedLegs: legs.length };
+    },
     async healthInsight(ctx: StageContext): Promise<HealthInsight> {
       const insight = target("insight");
       if (!insight) throw new PlannerError("health_insight", "agent_config", 503, "HEALTH_AGENT_NOT_CONFIGURED", null, true);
-      const result = await runAgentSession(config, "health_insight", insight, healthInsightPrompt(ctx), 75_000, true,
-        ctx.signal, ctx.requestId, ctx.progress, () => true);
+      const result = await runAgentSession(config, "health_insight", insight, healthInsightPrompt(ctx), STAGE_BY_NAME.health_insight.budgetMs, true,
+        ctx.signal, ctx.requestId, ctx.progress, () => true, undefined, ctx.sessionCreated);
       const parsed = parseJsonText(result.text);
       const pace = parsed.walking_pace;
       const breaks = parsed.break_frequency;
@@ -251,6 +331,7 @@ export function createAgentProvider(config: BailianConfig): PlanningProvider {
         throw new PlannerError("health_insight", "agent_output", 502, "INVALID_HEALTH_INSIGHT", null, true);
       }
       return {
+        ...abstractHealth(parsed),
         walkingPace: pace as HealthInsight["walkingPace"],
         breakFrequency: breaks as HealthInsight["breakFrequency"],
         sensoryFilters: Array.isArray(parsed.sensory_filters)
@@ -264,9 +345,9 @@ export function createAgentProvider(config: BailianConfig): PlanningProvider {
     async localResearch(ctx: StageContext): Promise<LocalResearch> {
       const local = target("local");
       if (!local) throw new PlannerError("local_research", "agent_config", 503, "LOCAL_AGENT_NOT_CONFIGURED", null, true);
-      const result = await runAgentSession(config, "local_research", local, localResearchPrompt(ctx), 120_000, true,
-        ctx.signal, ctx.requestId, ctx.progress, (evidence) => evidence.successfulWebSearches > 0);
-      return { services: parseLocalServices(result.text, result.evidence.sourceUrls), searches: result.evidence.successfulWebSearches };
+      const result = await runAgentSession(config, "local_research", local, localResearchPrompt(ctx), STAGE_BY_NAME.local_research.budgetMs, true,
+        ctx.signal, ctx.requestId, ctx.progress, (evidence) => evidence.successfulWebSearches > 0, undefined, ctx.sessionCreated);
+      return { ...parseLocalServices(result.text, result.evidence.sourceUrls), searches: result.evidence.successfulWebSearches };
     },
 
     async flyaiInventory(ctx: StageContext): Promise<FlyaiInventory> {
@@ -274,79 +355,102 @@ export function createAgentProvider(config: BailianConfig): PlanningProvider {
       if (!travel?.vaultIds?.length) {
         throw new PlannerError("flyai_inventory", "agent_config", 503, "FLYAI_VAULT_NOT_CONFIGURED", null, false);
       }
-      const prompt = [
-        "你是 BioTrip 的旅行编排 Agent。使用本环境安装的 BioTrip FlyAI search Skill 和官方 FlyAI CLI 搜索飞猪真实旅行库存、景点、票务与旅游保险，再结合用户日程与已核验的当地资料编排行程。",
-        `只允许搜索，不得预订、付款、修改外部订单或假称已预订。运行环境中的 FLYAI_API_KEY 由百炼 Vault 以占位符形式提供，只发往 BioTrip 只读签名网关，网关验证后签名并转发至飞猪官方 API；不要输出、记录或改写该变量。${FLYAI_SKILL_RULE}`,
-        composePlanPrompt(ctx, { health: null, local: null, inventory: EMPTY_INVENTORY }, { inventoryFromAgent: true }),
-      ].join("\n\n");
+      const { commands, unsearchedCategories } = skillInventoryQueries(ctx);
 
       try {
-        const result = await runAgentSession(config, "flyai_inventory", travel, prompt, 180_000, false,
-          ctx.signal, ctx.requestId, ctx.progress, (evidence) => evidence.successfulFlyaiSearches > 0);
-        // The agent's own place links become the inventory, but only after every
-        // one of them is matched against the URLs its tool calls actually returned.
-        const plan = parsePlan(result.text, ctx.fixedItems);
-        const allowed = new Set(result.evidence.sourceUrls);
-        if (!plan.places.length || plan.places.some((place) => !allowed.has(place.url))) {
-          throw new PlannerError("flyai_inventory", "agent_output", 502, "UNVERIFIED_FLYAI_SOURCE", null, false);
-        }
-        travelSession = plan;
+        // Leave part of the stage budget for one bounded Worker fallback.
+        const result = await runAgentSession(config, "flyai_inventory", travel, flyaiInventoryPrompt(ctx, commands), 50_000, false,
+          ctx.signal, ctx.requestId, ctx.progress, (evidence) => evidence.successfulFlyaiSearches > 0, commands, ctx.sessionCreated, ctx.inventoryAvailable);
         return {
-          sources: plan.places.map((place) => ({ name: place.name, url: place.url, category: place.category, price: null })),
+          sources: result.evidence.flyaiSources,
           searches: result.evidence.successfulFlyaiSearches,
           failedSearches: 0,
-          failedCategories: [],
+          failedCategories: [...new Set([...unsearchedCategories, ...result.evidence.emptyFlyaiCategories])],
           executor: "agent_skill",
         };
       } catch (error) {
         if (ctx.signal.aborted || error instanceof PlannerError && error.code === "CLIENT_DISCONNECTED") throw error;
-        // The Vault only injects the FlyAI credential for flyai.open.fliggy.com,
-        // so the sandbox cannot authenticate against our signing bridge and the
-        // CLI exits non-zero. Rather than fail the trip, the Worker runs the
-        // identical read-only searches through its own signed channel: the data
-        // is still real and verified, only the executor differs, and provenance
-        // records which one ran.
+        // A failed tool call, missing evidence or invalid agent output can all
+        // prevent the Skill result from being accepted. Log the actual failure
+        // code and use verified Worker searches; provenance records the executor.
+        const failure = normalizePlannerError("flyai_inventory", "agent_inventory", error);
         console.info("[BioTrip flyai executor fallback]", {
           requestId: ctx.requestId,
-          code: error instanceof PlannerError ? error.code : "unknown",
+          code: failure.code,
         });
         const direct = await searchFlyaiFromWorker(ctx);
-        return { ...direct, executor: "worker" };
+        return { ...direct, executor: "worker", fallbackReason: failure.code };
       }
     },
 
-    async composePlan(ctx: StageContext, gathered: GatheredResults): Promise<ComposedPlan> {
-      if (travelSession) return travelSession;
+    async reliefInventory(ctx) {
       const travel = target("travel");
-      if (!travel) throw new PlannerError("compose_plan", "agent_config", 503, "TRAVEL_AGENT_NOT_CONFIGURED", null, false);
-      // The inventory came from the Worker's own channel, so the sources are
-      // already here and the agent must not search again: a second CLI attempt
-      // would only repeat the same sandbox failure and waste the stage budget.
-      const result = await runAgentSession(config, "compose_plan", travel, composePlanPrompt(ctx, gathered), 180_000, false,
-        ctx.signal, ctx.requestId, ctx.progress, () => true);
+      const queries = reliefQueries(ctx);
+      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+      const commands = queries.map(query => ({ category: query.category,
+        command: `DEBUG_FLYAI_MCP_URL=https://biotrip.ccwu.cc/api/flyai/mcp flyai keyword-search --query ${quote(query.query)}` }));
+      let fallbackReason: string | undefined;
+      if (travel?.vaultIds?.length) {
+        try {
+          const result = await runAgentSession(config, "relief_inventory", travel, flyaiInventoryPrompt(ctx, commands), 25_000, true,
+            ctx.signal, ctx.requestId, ctx.progress, () => true, commands, ctx.sessionCreated);
+          return { sources: result.evidence.flyaiSources, searches: result.evidence.successfulFlyaiSearches, failedSearches: 0,
+            failedCategories: result.evidence.emptyFlyaiCategories, executor: "agent_skill" };
+        } catch (error) {
+          ctx.signal.throwIfAborted();
+          fallbackReason = normalizePlannerError("relief_inventory", "agent_inventory", error).code;
+        }
+      } else fallbackReason = "FLYAI_VAULT_NOT_CONFIGURED";
+      const results = await Promise.allSettled(queries.map(query => searchFlyai("fliggy_fast_search", { query: query.query }, ctx.signal, query.category)));
+      ctx.signal.throwIfAborted();
+      const sources = results.flatMap(result => result.status === "fulfilled" ? result.value.sources : []).slice(0, 24);
+      if (!sources.length) throw new PlannerError("relief_inventory", "search", 502, "NO_VERIFIED_FLYAI_SOURCE", null, true);
+      return { sources, searches: queries.length, failedSearches: results.filter(result => result.status === "rejected").length,
+        failedCategories: results.flatMap((result, index) => result.status === "rejected" || !result.value.sources.length ? [queries[index].category] : []),
+        executor: "worker", fallbackReason };
+    },
+
+    async composeAdjustments(ctx, gathered) {
+      const composer = target("compose");
+      if (!composer) throw new PlannerError("compose_adjustments", "agent_config", 503, "COMPOSE_AGENT_NOT_CONFIGURED", null, true);
+      const result = await runAgentSession(config, "compose_adjustments", composer, adjustmentPrompt(ctx, gathered), 45_000, true,
+        ctx.signal, ctx.requestId, ctx.progress, () => true, undefined, ctx.sessionCreated);
+      return parseJsonText(result.text);
+    },
+
+    async composePlan(ctx: StageContext, gathered: GatheredResults): Promise<ComposedPlan> {
+      const composer = target("compose");
+      if (!composer) throw new PlannerError("compose_plan", "agent_config", 503, "COMPOSE_AGENT_NOT_CONFIGURED", null, false);
+      // The inventory is already verified, so composition uses those sources
+      // without spending another search call.
+      const result = await runAgentSession(config, "compose_plan", composer, composePlanPrompt(ctx, gathered), STAGE_BY_NAME.compose_plan.budgetMs, false,
+        ctx.signal, ctx.requestId, ctx.progress, () => true, undefined, ctx.sessionCreated);
+      const parsed = parseJsonText(result.text);
+      const body = isRecord(parsed.plan) ? parsed.plan : parsed;
+      const rows = Array.isArray(body.itinerary) ? body.itinerary.filter(isRecord) : [];
+      console.info("[BioTrip composition shape]", {
+        requestId: ctx.requestId,
+        textLength: result.text.length,
+        summaryPresent: typeof body.summary === "string" && Boolean(body.summary.trim()),
+        reasonPresent: typeof body.reason === "string" && Boolean(body.reason.trim()),
+        adjustmentsArray: Array.isArray(body.adjustments),
+        itineraryRows: rows.length,
+        detailRows: rows.filter((item) => typeof item.detail === "string").length,
+        datedRows: rows.filter((item) => typeof item.date === "string").length,
+        fixedMatches: ctx.fixedItems.filter((fixed) => rows.some((item) => item.fixed === true && item.time === fixed.time && item.name === fixed.name && (!fixed.date || item.date === fixed.date))).length,
+        fixedRequested: ctx.fixedItems.length,
+      });
       const plan = parsePlan(result.text, ctx.fixedItems);
-      const allowed = new Set(gathered.inventory.sources.map((source) => source.url));
-      // Drop a place we cannot verify instead of failing the whole trip. The
-      // link never reaches the traveller, which is what the no-fabrication rule
-      // actually requires; discarding the itinerary would punish them for one
-      // bad link.
-      const before = plan.places.length;
-      plan.places = plan.places.filter((place) => allowed.has(place.url));
-      if (plan.places.length !== before) {
-        console.info("[BioTrip dropped unverified places]", {
-          requestId: ctx.requestId, dropped: before - plan.places.length,
-        });
-      }
-      return plan;
+      // Both transports request source_index references for supplied inventory.
+      // Bind from the raw output because parsePlan only normalises URL places.
+      return validateComposedPlan(bindPlanPlaces(plan, result.text, gathered.inventory.sources, ctx.requestId), ctx);
     },
   };
 }
 
-const EMPTY_INVENTORY: FlyaiInventory = { sources: [], searches: 0, failedSearches: 0, failedCategories: [], executor: "agent_skill" };
-
-/** The Worker's own signed FlyAI channel, used when the sandbox cannot sign. */
+/** Verified Worker searches when the Skill result cannot be accepted. */
 async function searchFlyaiFromWorker(ctx: StageContext): Promise<Omit<FlyaiInventory, "executor">> {
-  return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate);
+  return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate, ctx.inventoryAvailable);
 }
 
 function fallbackBasis(ctx: StageContext): HealthBasis {

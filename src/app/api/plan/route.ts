@@ -1,18 +1,16 @@
 import { NextResponse } from "next/server";
 import { getCurrentAccount, isSameOrigin } from "@/lib/auth";
-import { JourneyError } from "@/lib/journeys";
+import { checkJourneyForGeneration, JourneyError } from "@/lib/journeys";
 import { journeyFailure, readJourneyJson } from "@/lib/journey-http";
 import {
-  ASSUMED_ARRIVAL_HOUR,
-  ASSUMED_DEPARTURE_HOUR,
   localDateTimeAsInstant,
-  localDateTimeAt,
-  offsetMinutesAt,
   parseSchedule,
+  scheduleError,
+  planningDateError,
   validateInput,
   type PlannerInput,
 } from "@/lib/planner-input";
-import { planEventStream, type PlanProgress } from "@/lib/plan-response";
+import { planEventStream, type PlanProgress, type PlanRecommendations } from "@/lib/plan-response";
 import { saveGeneratedJourney } from "@/lib/journeys";
 import type { JourneyGeneratedPlan } from "@/lib/journey-types";
 import { runPlanning } from "@/lib/planning/pipeline";
@@ -20,9 +18,10 @@ import { STAGE_BY_NAME, PLAN_BUDGET_MS } from "@/lib/planning/stages";
 import { reservePlanning as reservePlanningLease } from "@/lib/planning/rate-limit";
 import type { TripTiming } from "@/lib/planning/contract";
 import { listLearnedPreferences, preferenceDefaults } from "@/lib/preferences";
+import { resolveTripTiming } from "@/lib/trip-timing";
 
 export const runtime = "nodejs";
-export const maxDuration = 360;
+export const maxDuration = 210;
 
 function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -36,35 +35,10 @@ async function reservePlanning(accountId: string, leaseSeconds: number) {
   return reservePlanningLease(accountId, leaseSeconds);
 }
 
-function resolveTiming(input: PlannerInput): TripTiming {
-  const departureLocal = localDateTimeAt(input.trip.departureDate, ASSUMED_DEPARTURE_HOUR);
-  const arrivalLocal = localDateTimeAt(input.trip.departureDate, ASSUMED_ARRIVAL_HOUR);
-  const departureInstant = localDateTimeAsInstant(departureLocal, input.trip.departureTimezone);
-  const arrivalInstant = localDateTimeAsInstant(arrivalLocal, input.trip.destinationTimezone);
-  if (arrivalInstant.getTime() < departureInstant.getTime()) throw new Error("抵达时间不能早于出发时间。");
-  const timezoneShiftMinutes =
-    offsetMinutesAt(arrivalInstant, input.trip.destinationTimezone) -
-    offsetMinutesAt(departureInstant, input.trip.departureTimezone);
-  const arrivalDate = input.trip.departureDate;
-  const endDate = input.trip.returnDate || arrivalDate;
-  const days = Math.max(1, Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${arrivalDate}T00:00:00Z`)) / 86_400_000) + 1);
-  return {
-    departureInstant,
-    arrivalInstant,
-    timezoneShiftMinutes,
-    travelHours: Math.round((arrivalInstant.getTime() - departureInstant.getTime()) / 3_600_000 * 10) / 10,
-    arrivalDate,
-    endDate,
-    days,
-    departureLocal,
-    arrivalLocal,
-  };
-}
-
 function isNearOrOngoingTrip(input: PlannerInput, timing: TripTiming) {
   const now = Date.now();
   const returnDayEnd = input.trip.returnDate
-    ? Date.parse(`${input.trip.returnDate}T23:59:59Z`)
+    ? localDateTimeAsInstant(`${input.trip.returnDate}T23:59`, input.trip.destinationTimezone).getTime()
     : timing.arrivalInstant.getTime() + 24 * 60 * 60 * 1000;
   // WHOOP describes the traveller today, so it only informs a trip that is
   // imminent or under way. A distant trip is planned as a contingency.
@@ -72,7 +46,11 @@ function isNearOrOngoingTrip(input: PlannerInput, timing: TripTiming) {
 }
 
 /** Learned defaults only ever extend what the traveller explicitly confirmed. */
-async function memoryUsage(accountId: string, input: PlannerInput) {
+async function memoryUsage(accountId: string, input: PlannerInput, includeMemory: boolean) {
+  if (!includeMemory) return {
+    input: { ...input, profileMemoryNotes: "" },
+    memory: { applied: false, source: "none" as const, noteCount: 0 },
+  };
   const preferences = await listLearnedPreferences(accountId);
   const defaults = preferenceDefaults(preferences);
   const learnedNotes = defaults.notes;
@@ -98,21 +76,39 @@ export async function POST(request: Request) {
   if (!account) return json({ error: "请先登录。" }, 401);
   let raw: unknown;
   try { raw = await readJourneyJson(request); } catch (error) { return journeyFailure(error); }
+  if (record(raw) && record(raw.trip)) {
+    const dateError = planningDateError(raw.trip.departureDate, raw.trip.returnDate);
+    if (dateError) return json({ error: dateError }, 400);
+    if (typeof raw.trip.itineraryText === "string") {
+      const error = scheduleError(raw.trip.itineraryText);
+      if (error) return json({ error }, 400);
+    }
+  }
 
   const parsed = validateInput(raw);
-  if (!parsed || !record(raw) || (raw.includeWhoop !== undefined && typeof raw.includeWhoop !== "boolean")) {
-    return json({ error: "行程时间、时区、偏好或授权无效。日程请使用“时间 | 地点/活动 | 固定/灵活”格式。" }, 400);
+  if (!parsed || !record(raw) || (raw.includeWhoop !== undefined && typeof raw.includeWhoop !== "boolean") ||
+      (raw.includeMemory !== undefined && typeof raw.includeMemory !== "boolean")) {
+    return json({ error: "旅行资料暂时无法识别，请核对城市、日期、时区、偏好和本次授权。" }, 400);
   }
-  const journeyId = typeof raw.journeyId === "string" ? raw.journeyId : undefined;
-  const expectedVersion = typeof raw.expectedVersion === "number" ? raw.expectedVersion : undefined;
+  let target;
+  try { target = await checkJourneyForGeneration(account.id, raw.journeyId, raw.expectedVersion); }
+  catch (error) { return journeyFailure(error); }
+  const journeyId = target?.id;
+  const expectedVersion = target?.version;
   const includeWhoop = raw.includeWhoop === true;
 
   let timing: TripTiming;
-  try { timing = resolveTiming(parsed); }
+  try { timing = resolveTripTiming(parsed); }
   catch (error) { return json({ error: error instanceof Error ? error.message : "行程时区无效。" }, 400); }
 
-  const fixedItems = parseSchedule(parsed.trip.itineraryText)?.filter((item) => item.fixed) ?? [];
-  const { input, memory } = await memoryUsage(account.id, parsed);
+  const schedule = parseSchedule(parsed.trip.itineraryText) ?? [];
+  for (const item of schedule) {
+    if (item.date && (item.date < timing.arrivalDate || item.date > timing.endDate)) {
+      return json({ error: `活动“${item.name}”的日期不在本次行程内，请选在 ${timing.arrivalDate} 至 ${timing.endDate} 之间。` }, 400);
+    }
+  }
+  const fixedItems = schedule.filter((item) => item.fixed).map((item) => ({ ...item, date: item.date ?? timing.arrivalDate }));
+  const { input, memory } = await memoryUsage(account.id, parsed, raw.includeMemory !== false);
   const requestId = crypto.randomUUID();
 
   const controller = new AbortController();
@@ -121,7 +117,7 @@ export async function POST(request: Request) {
   else request.signal.addEventListener("abort", disconnect, { once: true });
   const startedAt = Date.now();
 
-  const execute = async (progress: (event: PlanProgress) => void) => {
+  const execute = async (progress: (event: PlanProgress) => void, recommendations: (event: PlanRecommendations) => void) => {
     // The lease is taken here, not before the response starts: a request that
     // is already disconnected must not lock the account out for the lease window.
     const lease = await reservePlanning(account.id, Math.ceil(PLAN_BUDGET_MS / 1000) + 30);
@@ -136,6 +132,7 @@ export async function POST(request: Request) {
         requestId,
         signal: controller.signal,
         progress,
+        recommendations,
         memory,
       });
 
@@ -163,6 +160,9 @@ export async function POST(request: Request) {
         generated.plan.adjustments.push("WHOOP 授权已失效，本次按你的自评规划；可在个人档案重新连接。");
       }
 
+      // A cancelled generation must not begin a new database commit after the
+      // provider resolves; a commit already in flight is read back by the UI.
+      controller.signal.throwIfAborted();
       const journey = await saveGeneratedJourney(account.id, {
         ...(journeyId ? { journeyId, expectedVersion } : {}),
         draft: input,
@@ -181,9 +181,9 @@ export async function POST(request: Request) {
     }
   };
 
-  const guarded = async (progress: (event: PlanProgress) => void) => {
+  const guarded = async (progress: (event: PlanProgress) => void, recommendations: (event: PlanRecommendations) => void = () => undefined) => {
     try {
-      return await execute(progress);
+      return await execute(progress, recommendations);
     } catch (error) {
       if (error instanceof JourneyError) return journeyFailure(error);
       const stage = error && typeof error === "object" && "stage" in error && typeof error.stage === "string"
@@ -195,10 +195,13 @@ export async function POST(request: Request) {
         ? error.status : 502;
       const upstreamId = error && typeof error === "object" && "requestId" in error && typeof error.requestId === "string"
         ? error.requestId : null;
+      const message = code === "NO_VERIFIED_FLYAI_SOURCE"
+        ? "飞猪本次没有返回可核验的商品资料，请调整目的地或服务类型后重试。已保留你的草稿和原有行程。"
+        : "本次规划未完成，已保留你的草稿和原有行程。请稍后重试。";
       console.error("[BioTrip plan failure]", { requestId, stage, code, status, providerRequestId: upstreamId, elapsedMs: Date.now() - startedAt });
       return json(
         {
-          error: `实时规划服务未能完成。诊断：${policy?.label ?? "行程编排"} · HTTP ${status} · ${code}${upstreamId ? ` · 请求 ID ${upstreamId}` : ""}。本次没有生成演示结果，也未改变你的原始行程。`,
+          error: `${message} 诊断：${policy?.label ?? "行程编排"} · HTTP ${status} · ${code}${upstreamId ? ` · 请求 ID ${upstreamId}` : ""}。`,
           diagnostic: { stage, status, code, requestId: upstreamId },
         },
         status >= 400 && status < 600 ? status : 502,

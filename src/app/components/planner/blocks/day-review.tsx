@@ -3,7 +3,7 @@ import styles from "../../zen-dashboard.module.css";
 import type { JourneyGeneratedPlan } from "@/lib/journey-types";
 
 /**
- * The last screen before a trip is saved: what each day holds, and which
+ * The saved plan's review screen: what each day holds, and which
  * commitments are locked.
  *
  * It reads as a summary rather than a form — by this point the traveller has
@@ -22,7 +22,12 @@ export function DayReview({
   destination,
   travelHours,
   onEditPace,
+  onSelectDay,
+  onSelectActivity,
+  onEditActivities,
+  onShare,
   onLaunch,
+  launchLabel = "确认并开始旅程",
   busy,
   daysToShow = 6,
 }: {
@@ -31,7 +36,12 @@ export function DayReview({
   destination: string;
   travelHours: number;
   onEditPace: () => void;
+  onSelectDay?: (date: string) => void;
+  onSelectActivity?: (item: Item) => void;
+  onEditActivities?: () => void;
+  onShare?: () => void;
   onLaunch: () => void;
+  launchLabel?: string;
   busy?: boolean;
   daysToShow?: number;
 }) {
@@ -40,9 +50,10 @@ export function DayReview({
     const key = dayKey(item, startDate);
     byDay.set(key, [...(byDay.get(key) ?? []), item]);
   }
-  const days = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(0, daysToShow);
+  const allDays = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const days = allDays.slice(0, daysToShow);
   const locked = plan.plan.itinerary.filter((item) => item.fixed);
-  const nights = Math.max(1, days.length - 1);
+  const nights = Math.max(0, allDays.length - 1);
 
   return (
     <div className={styles.stack}>
@@ -52,7 +63,7 @@ export function DayReview({
           <span className={styles.chip}><Icon name="check" size={12} />待你确认</span>
         </div>
         <h1>{plan.plan.headline}</h1>
-        <p>{destination ? `为 ${destination} 安排 · ` : ""}共 {days.length} 天 / {nights} 晚，旅程时间约 {travelHours} 小时。</p>
+        <p>{destination ? `为 ${destination} 安排 · ` : ""}共 {allDays.length} 天 / {nights} 晚，暂按 {travelHours} 小时交通缓冲安排。</p>
       </div>
 
       <section className={styles.card}>
@@ -62,7 +73,7 @@ export function DayReview({
         </div>
         <div className={styles.dayList}>
           {days.map(([day, items], index) => (
-            <article className={styles.dayRow} key={day}>
+            <button type="button" className={`${styles.dayRow} ${styles.dayDetailButton}`} key={day} onClick={() => onSelectDay?.(day)} aria-label={`查看第 ${index + 1} 天完整安排`} disabled={busy || !onSelectDay}>
               <div className={styles.dayMarker}>
                 <strong>D{index + 1}</strong>
                 <small>{/^\d{4}-/.test(day) ? day.slice(5).replace("-", "/") : ""}</small>
@@ -72,9 +83,11 @@ export function DayReview({
                 <p>{items.slice(0, 3).map((item) => `${item.time} ${item.name}`).join(" · ")}</p>
                 {items.length > 3 && <small className={styles.mutedText}>另有 {items.length - 3} 项</small>}
               </div>
-            </article>
+              <Icon name="arrow" size={16} />
+            </button>
           ))}
         </div>
+        {allDays.length > days.length ? <p className={styles.note}>另有 {allDays.length - days.length} 天，完整安排已保存，可在今日行程中按日期查看。</p> : null}
       </section>
 
       <section className={styles.card}>
@@ -85,10 +98,11 @@ export function DayReview({
         {locked.length ? (
           <div className={styles.summaryList}>
             {locked.map((item, index) => (
-              <div className={styles.summaryRow} key={`${item.time}-${index}`}>
+              <button type="button" className={`${styles.summaryRow} ${styles.detailRowButton}`} key={`${item.time}-${index}`} onClick={() => onSelectActivity?.(item)} disabled={busy || !onSelectActivity}>
                 <span><Icon name="check" size={13} />{item.time}</span>
                 <strong>{item.name}</strong>
-              </div>
+                <Icon name="arrow" size={14} />
+              </button>
             ))}
           </div>
         ) : (
@@ -112,11 +126,12 @@ export function DayReview({
       </section>
 
       <button className={styles.primaryButton} disabled={busy} onClick={onLaunch}>
-        <Icon name="check" />确认并保存这段旅程
+        <Icon name="check" />{launchLabel}
       </button>
       <button className={styles.textButton} onClick={onEditPace}>
         <Icon name="tune" size={16} />调整密度或固定安排
       </button>
+      <div className={styles.actions}>{onEditActivities ? <button type="button" className={styles.secondaryButton} disabled={busy} onClick={onEditActivities}><Icon name="edit" size={16} />编辑活动与顺序</button> : null}{onShare ? <button type="button" className={styles.textButton} disabled={busy} onClick={onShare}><Icon name="share" size={16} />分享旅程</button> : null}</div>
     </div>
   );
 }

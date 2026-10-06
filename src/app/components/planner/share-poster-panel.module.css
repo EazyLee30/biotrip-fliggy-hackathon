@@ -1,0 +1,9 @@
+.panel { display:grid; gap:14px; margin-top:20px; color:#637166; font-size:12px; }
+.panel > button { min-height:46px; border:1px solid #d5dfd5; border-radius:14px; background:#edf0e9; color:#2f6654; font:inherit; font-size:14px; cursor:pointer; }
+.panel > button:disabled { opacity:.6; cursor:wait; }
+.panel p { margin:0; line-height:1.7; }
+.previews { display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x proximity; padding-bottom:8px; }
+.previews figure { flex:0 0 200px; margin:0; scroll-snap-align:start; }
+.previews img { display:block; width:100%; height:auto; border:1px solid #e0e5dd; border-radius:10px; }
+.previews figcaption { padding-top:10px; }
+.previews a { display:block; min-height:44px; text-align:center; padding:10px; color:#2f6654; }

@@ -15,12 +15,17 @@ export type PlanStage =
   | "health_insight"
   | "local_research"
   | "flyai_inventory"
-  | "compose_plan";
+  | "compose_plan"
+  | "relief_inventory"
+  | "mobility"
+  | "compose_adjustments"
+  | "poi_catalog";
 
 export const PLAN_STAGES: readonly PlanStage[] = [
   "health_insight",
   "local_research",
   "flyai_inventory",
+  "poi_catalog",
   "compose_plan",
 ];
 
@@ -33,7 +38,8 @@ export type DataGrant =
   | "trip"
   | "preferences"
   | "self_report"
-  | "health_metrics";
+  | "health_metrics"
+  | "itinerary";
 
 export type StagePolicy = {
   name: PlanStage;
@@ -56,6 +62,8 @@ export type HealthInsight = {
   basis: HealthBasis;
   /** True when WHOOP was connected but its grant is no longer usable. */
   whoopUnavailable: boolean;
+  energy?: import("../adjust/types").Energy;
+  needs?: import("../adjust/types").Need[];
 };
 
 export type LocalService = {
@@ -69,6 +77,7 @@ export type LocalService = {
 export type LocalResearch = {
   services: LocalService[];
   searches: number;
+  unverifiedCount?: number;
 };
 
 export type FlyaiInventory = {
@@ -76,6 +85,8 @@ export type FlyaiInventory = {
   searches: number;
   failedSearches: number;
   failedCategories: string[];
+  /** Original Skill failure, retained when the verified Worker fallback runs. */
+  fallbackReason?: string;
   /**
    * Who actually ran the searches. The competition requires the Bailian agent to
    * use the official FlyAI Skill, so `agent_skill` is the intended path; when the
@@ -91,8 +102,8 @@ export type ComposedPlan = {
   summary: string;
   reason: string;
   adjustments: string[];
-  itinerary: Array<{ date?: string; time: string; name: string; detail: string; fixed: boolean }>;
-  places: Array<{ name: string; category: string; reason: string; source: string; url: string }>;
+  itinerary: import("../journey-types").ItineraryActivity[];
+  places: Array<{ name: string; category: string; reason: string; source: string; url: string; imageUrl?: string }>;
 };
 
 /** Everything a stage may be shown, already narrowed to its declared grants. */
@@ -112,6 +123,7 @@ export type StageInput = {
     moodFeedback?: string;
   };
   healthMetrics?: unknown;
+  itinerary?: Array<{ id: string; date: string; time: string; name: string; fixed: boolean }>;
 };
 
 export type StageContext = {
@@ -120,6 +132,9 @@ export type StageContext = {
   signal: AbortSignal;
   requestId: string;
   progress: (event: PlanProgress) => void;
+  sessionCreated?: (stage: PlanStage, sessionId: string) => Promise<void>;
+  /** Public verified inventory batches; never model text or health records. */
+  inventoryAvailable?: (sources: readonly FlyaiSource[]) => void;
   /** Derived facts shared by every stage, already validated. */
   timing: TripTiming;
   fixedItems: ScheduleItem[];
@@ -213,10 +228,12 @@ export function buildStageInput(
     preferences: StageInput["preferences"];
     selfReport: StageInput["selfReport"];
     healthMetrics?: unknown;
+    itinerary?: StageInput["itinerary"];
   },
 ): StageInput {
   const input: StageInput = {};
   for (const grant of grants) {
+    if (grant === "itinerary") input.itinerary = gathered.itinerary;
     if (grant === "trip") input.trip = gathered.trip;
     if (grant === "preferences") input.preferences = gathered.preferences;
     if (grant === "self_report") input.selfReport = gathered.selfReport;
@@ -242,10 +259,14 @@ export interface PlanningProvider {
   localResearch(ctx: StageContext): Promise<LocalResearch>;
   flyaiInventory(ctx: StageContext): Promise<FlyaiInventory>;
   composePlan(ctx: StageContext, gathered: GatheredResults): Promise<ComposedPlan>;
+  mobility?(ctx: StageContext): Promise<import("./mobility").MobilityResult>;
+  reliefInventory?(ctx: StageContext): Promise<FlyaiInventory>;
+  composeAdjustments?(ctx: StageContext, gathered: import("./adjust-pipeline").AdjustmentGathered): Promise<unknown>;
 }
 
 /** Stage outputs collected so far, handed to the composing stage. */
 export type GatheredResults = {
+  pois?: FlyaiSource[];
   health: HealthInsight | null;
   local: LocalResearch | null;
   inventory: FlyaiInventory;

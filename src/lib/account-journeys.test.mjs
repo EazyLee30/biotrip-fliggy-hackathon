@@ -3,11 +3,13 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { loadModule, plain, readProjectFile } from "./test-support/module-loader.mjs";
 
+const itineraryEdit = loadModule("lib/itinerary-edit.ts", { "./planner-input": loadModule("lib/planner-input.ts") });
+
 const ACCOUNT = "11111111-1111-1111-1111-111111111111";
 const OTHER = "22222222-2222-2222-2222-222222222222";
 const MIGRATIONS = [
   "0001_accounts.sql", "0002_password_auth.sql", "0003_journeys.sql",
-  "0004_whoop_connections.sql", "0005_learned_preferences.sql", "0006_preference_kinds.sql",
+  "0004_whoop_connections.sql", "0005_learned_preferences.sql", "0006_preference_kinds.sql", "0007_planning_jobs.sql",
 ];
 
 function storage() {
@@ -40,8 +42,8 @@ function fixture() {
   const { database, sqlite } = storage();
   // The real preference module runs against the same database so learning is
   // exercised end to end rather than stubbed away.
-  const preferences = loadModule("lib/preferences.ts", { "@/lib/auth": { getDatabase: () => database } });
-  const journeys = loadModule("lib/journeys.ts", { "@/lib/auth": { getDatabase: () => database }, "@/lib/preferences": preferences });
+  const preferences = loadModule("lib/preferences.ts", { "@/lib/database": { getDatabase: () => database } });
+  const journeys = loadModule("lib/journeys.ts", { "@/lib/database": { getDatabase: () => database }, "@/lib/preferences": preferences, "@/lib/itinerary-edit": itineraryEdit });
   return { journeys, preferences, sqlite };
 }
 const DRAFT = {
@@ -62,6 +64,23 @@ test("journeys are isolated by account and reject unverified client plans", asyn
     await assert.rejects(journeys.updateJourney(OTHER, created.id, { version: 1, title: "窃取" }), (error) => error.code === "JOURNEY_NOT_FOUND");
     await assert.rejects(journeys.createJourney(ACCOUNT, { draft: DRAFT, plan: PLAN }), (error) => error.code === "INVALID_JOURNEY");
     assert.equal((await journeys.listJourneys(OTHER)).length, 0);
+  } finally { sqlite.close(); }
+});
+
+test("generation preflight rejects stale, foreign, completed and malformed targets", async () => {
+  const { journeys, sqlite } = fixture();
+  try {
+    let current = await journeys.createJourney(ACCOUNT, { draft: DRAFT });
+    assert.equal(await journeys.checkJourneyForGeneration(ACCOUNT, undefined, undefined), null);
+    assert.equal((await journeys.checkJourneyForGeneration(ACCOUNT, current.id, current.version)).id, current.id);
+    await assert.rejects(journeys.checkJourneyForGeneration(OTHER, current.id, current.version), { code: "JOURNEY_NOT_FOUND" });
+    await assert.rejects(journeys.checkJourneyForGeneration(ACCOUNT, current.id, 999), { code: "JOURNEY_CHANGED" });
+    await assert.rejects(journeys.checkJourneyForGeneration(ACCOUNT, undefined, 1), { code: "INVALID_JOURNEY" });
+    await assert.rejects(journeys.checkJourneyForGeneration(ACCOUNT, 123, 1), { code: "INVALID_JOURNEY" });
+    current = await journeys.saveGeneratedJourney(ACCOUNT, { journeyId: current.id, expectedVersion: current.version, draft: DRAFT, generated: PLAN });
+    current = await journeys.updateJourney(ACCOUNT, current.id, { version: current.version, status: "active" });
+    current = await journeys.updateJourney(ACCOUNT, current.id, { version: current.version, status: "completed" });
+    await assert.rejects(journeys.checkJourneyForGeneration(ACCOUNT, current.id, current.version), { code: "JOURNEY_COMPLETED" });
   } finally { sqlite.close(); }
 });
 
@@ -167,10 +186,11 @@ test("in-trip fatigue teaches a slower default for later trips", async () => {
 /** Loads the real rate-limit module against an in-memory database. */
 function rateLimit(database) {
   return loadModule("lib/planning/rate-limit.ts", {
-    "@/lib/auth": { getDatabase: () => database },
+    "@/lib/database": { getDatabase: () => database },
     "@/lib/journeys": loadModule("lib/journeys.ts", {
-      "@/lib/auth": { getDatabase: () => database },
-      "@/lib/preferences": loadModule("lib/preferences.ts", { "@/lib/auth": { getDatabase: () => database } }),
+      "@/lib/database": { getDatabase: () => database },
+      "@/lib/preferences": loadModule("lib/preferences.ts", { "@/lib/database": { getDatabase: () => database } }),
+      "@/lib/itinerary-edit": itineraryEdit,
     }),
   });
 }
@@ -248,7 +268,7 @@ test("widening the preference kinds keeps existing rows and allows the new ones"
     sqlite.prepare("INSERT INTO learned_preferences(id,account_id,kind,value,label,hits) VALUES(?,?,?,?,?,?)")
       .run("legacy-1", ACCOUNT, "rhythm", "flexible", "留白探索", 2).run?.();
     const { preferences } = (() => ({
-      preferences: loadModule("lib/preferences.ts", { "@/lib/auth": { getDatabase: () => database } }),
+      preferences: loadModule("lib/preferences.ts", { "@/lib/database": { getDatabase: () => database } }),
     }))();
     const existing = sqlite.prepare("SELECT kind, label, hits FROM learned_preferences WHERE id='legacy-1'").get();
     assert.deepEqual({ kind: existing.kind, label: existing.label, hits: existing.hits }, {
@@ -264,7 +284,7 @@ test("widening the preference kinds keeps existing rows and allows the new ones"
 test("verified accounts set one first password, then use passwords without more email codes", async () => {
   const { database, sqlite } = storage();
   const cookies = { get: () => undefined };
-  const auth = loadModule("lib/auth.ts", { "cloudflare:workers": { env: { BIOTRIP_DB: database } }, "next/headers": { cookies: async () => cookies } });
+  const auth = loadModule("lib/auth.ts", { "./database": { getDatabase: () => database }, "next/headers": { cookies: async () => cookies } });
   const account = { id: ACCOUNT, email: "traveler@example.com", display_name: "", has_password: false };
   try {
     const initial = await auth.setInitialPassword(account, "a quiet journey 2026");

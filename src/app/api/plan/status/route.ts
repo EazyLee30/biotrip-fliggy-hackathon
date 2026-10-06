@@ -18,9 +18,13 @@ export async function GET() {
   const account = await getCurrentAccount().catch(() => null);
   if (!account) return NextResponse.json({ error: "请先登录。" }, { status: 401 });
   const transport = planningTransportAvailability();
+  const mode = transport.mode.trim().toLowerCase();
+  const usable = mode === "managed" ? transport.managedAgent
+    : mode === "model" ? transport.modelApi
+    : mode === "auto" ? transport.managedAgent || transport.modelApi : false;
   const ready = Boolean(
     process.env.FLYAI_API_KEY && process.env.FLYAI_SIGN_SECRET &&
-    ((transport.managedAgent && transport.localInfoAgent && transport.insightAgent) || transport.modelApi),
+    usable,
   );
   return NextResponse.json({ ready }, { headers: { "Cache-Control": "no-store, private" } });
 }

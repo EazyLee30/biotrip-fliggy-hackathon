@@ -1,0 +1,4 @@
+.container { display: grid; gap: 8px; padding: 14px; border-radius: 14px; background: #edf0e9; }
+.action { justify-self: start; border: 1px solid #b8cbbc; border-radius: 999px; min-height: 42px; padding: 8px 16px; background: #fffefa; color: #2f6654; font-size: 13px; cursor: pointer; }
+.action:disabled { opacity: .6; cursor: wait; }
+.note { color: #536459; line-height: 1.6; }

@@ -60,7 +60,7 @@ BioTrip 已注册独立 WHOOP Sandbox 应用并配置回调与全量获准 read 
 
 ## 5. 百炼接入和费用
 
-比赛强制使用百炼不等于所有客户端请求都从浏览器直连百炼。Managed Agents 官方 API 要求百炼 API Key、工作空间 ID，Agent API 当前地域为 `cn-beijing`；PWA 通过同源服务端调用 `/sessions`、`/events`，并用 SSE 读取回复。每次生成使用三个短时 Session：健康解读与当地信息检索并行执行，然后运行旅行编排；服务端分别请求删除会话。API Key 不可放进前端。
+比赛强制使用百炼不等于所有客户端请求都从浏览器直连百炼。Managed Agents 官方 API 要求百炼 API Key、工作空间 ID，Agent API 当前地域为 `cn-beijing`；PWA 通过同源服务端调用 `/sessions`、`/events`，并用 SSE 读取回复。每次生成最多使用四个短时 Session：健康解读、当地信息检索（仅所选服务需要时）与旅行库存 Skill 检索并行执行，再用独立会话编排行程；服务端分别请求删除会话。API Key 不可放进前端。
 
 官方计费文档当前写明：运行中的 Agent Session 按 0.5 元/小时收取运行时费；模型 Token 和工具 / MCP 调用另计；总计 10 小时的运行时额度在生效后 30 天有效，且不抵扣模型或工具费。开发时控制并发、完成后结束/删除会话，并在百炼控制台核对账单。FlyAI 配额不等于百炼免费额度。BioTrip 已创建百炼三个 Agent/运行环境并预装 FlyAI CLI，但尚未配置百炼 API Key/FlyAI Vault 或验证真实 API 调用。百炼控制台当前余额为 ¥0.00，百炼联网搜索另按 ¥0.03/次标价，因此本轮没有发起计费搜索。平台计费需在启用当天再次核对。
 

@@ -7,7 +7,7 @@ export type EvidenceEvent = {
   content?: Array<{ type?: string; data?: Record<string, unknown> }>;
 };
 /** Mirrors the pipeline stage names so evidence is always attributed correctly. */
-type EvidenceMode = "health_insight" | "local_research" | "flyai_inventory" | "compose_plan";
+type EvidenceMode = "health_insight" | "local_research" | "flyai_inventory" | "compose_plan" | "relief_inventory" | "mobility" | "compose_adjustments" | "poi_catalog";
 type CommandCategory = "flyai_search" | "flyai_help" | "flyai_auth" | "environment_probe" | "other";
 export type SafeToolObservation = {
   commandCategory: CommandCategory | null;
@@ -25,7 +25,12 @@ export type ToolEvidence = {
   flyaiSearchCalls: number;
   successfulFlyaiSearches: number;
   sourceUrls: string[];
+  flyaiSources: FlyaiSource[];
+  flyaiCategories: string[];
+  /** Completed API queries whose data contained no usable named HTTPS source. */
+  emptyFlyaiCategories: string[];
 };
+export type FlyaiEvidenceCommand = { command: string; category: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -77,11 +82,55 @@ function collectFlyaiSources(value: unknown, result: Set<string>, depth = 0) {
     }
   }
 }
-function commandCategory(value: unknown): CommandCategory {
+/** Parse literal shell words only, including quoted public endpoint prefixes. */
+function shellWords(command: string): string[] | null {
+  if (command.length > 6000 || /[\r\n]/.test(command)) return null;
+  const words: string[] = [];
+  let word = "";
+  let started = false;
+  let quote = "";
+  for (let i = 0; i < command.length; i += 1) {
+    const char = command[i];
+    if (quote === "'") {
+      if (char === "'") quote = "";
+      else word += char;
+    } else if (char === "\\") {
+      if (i + 1 >= command.length) return null;
+      word += command[++i];
+      started = true;
+    } else if (quote === '"') {
+      if (char === '"') quote = "";
+      else if (char === "$" || char === "`") return null;
+      else word += char;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      started = true;
+    } else if (/\s/.test(char)) {
+      if (started) words.push(word);
+      word = "";
+      started = false;
+    } else {
+      if (/[;&|><(){}$`]/.test(char)) return null;
+      word += char;
+      started = true;
+    }
+  }
+  if (quote) return null;
+  if (started) words.push(word);
+  if (words[0] === "DEBUG_FLYAI_MCP_URL=https://biotrip.ccwu.cc/api/flyai/mcp") words.shift();
+  if (words[0] === "timeout" && /^\d+[smh]?$/.test(words[1] ?? "")) words.splice(0, 2);
+  if (words[0] === "/usr/local/bin/flyai") words[0] = "flyai";
+  return words;
+}
+function commandText(value: unknown) {
   const argumentsValue = jsonValue(value);
-  const command = isRecord(argumentsValue) && typeof argumentsValue.command === "string" ? argumentsValue.command.trim() : "";
+  return isRecord(argumentsValue) && typeof argumentsValue.command === "string" ? argumentsValue.command.trim() : "";
+}
+function commandCategory(value: unknown): CommandCategory {
+  const command = commandText(value);
+  const words = shellWords(command);
   if (/\bflyai\b[^\n]*\s(?:--help|-h)\b|\bflyai\s+help\b/.test(command)) return "flyai_help";
-  if (/^(?:DEBUG_FLYAI_MCP_URL=https:\/\/biotrip\.ccwu\.cc\/api\/flyai\/mcp\s+)?(?:timeout\s+\d+[smh]?\s+)?(?:\/usr\/local\/bin\/)?flyai\s+(?:keyword-search|ai-search|search-flight|search-train|search-hotel|search-poi|search-marriott-hotel|search-marriott-package)\b/.test(command) && !/[\r\n]/.test(command)) return "flyai_search";
+  if (words?.[0] === "flyai" && ["keyword-search", "fliggy-fast-search", "ai-search", "search-flight", "search-train", "search-hotel", "search-poi", "search-marriott-hotel", "search-marriott-package"].includes(words[1])) return "flyai_search";
   if (/\bflyai\s+(?:config|login|logout|auth)\b/.test(command)) return "flyai_auth";
   if (/(?:^|[;&|\s])(?:printenv|env|which|command\s+-v)\b|(?:process\.env|os\.environ)|\becho\b[^\n]*\bFLYAI_API_KEY\b/.test(command)) return "environment_probe";
   return "other";
@@ -112,11 +161,15 @@ function apiSucceeded(payload: unknown) {
 
 // Keep raw commands and tool output in request memory only. Consumers receive
 // safe counters, error categories and original source URLs, never credentials.
-export function createToolEvidence(mode: EvidenceMode) {
+export function createToolEvidence(mode: EvidenceMode, allowedCommands?: readonly FlyaiEvidenceCommand[]) {
   const seen = new Set<string>();
-  const calls = new Map<string, { name: string; category: CommandCategory | null }>();
+  const calls = new Map<string, { name: string; category: CommandCategory | null; sourceCategory: string }>();
   const completedCalls = new Set<string>();
   const sources = new Set<string>();
+  const flyaiSources = new Map<string, FlyaiSource>();
+  const flyaiCategories = new Set<string>();
+  const emptyFlyaiCategories = new Set<string>();
+  const expected = allowedCommands && new Map(allowedCommands.map((item) => [JSON.stringify(shellWords(item.command)), item.category]));
   let webSearchCalls = 0;
   let successfulWebSearches = 0;
   let flyaiSearchCalls = 0;
@@ -130,7 +183,13 @@ export function createToolEvidence(mode: EvidenceMode) {
       interrupted: null, apiSucceeded: null, sourceUrlCount: 0,
       failureCode: null, duplicate: false,
     };
-    if (event.status !== "completed" || !["tool_call", "tool_call_output"].includes(event.type ?? "")) return observation;
+    if (event.status !== "completed") return observation;
+    // Composition has already received its verified sources. Reject every
+    // provider call type before requiring a name, arguments or call identifier.
+    if ((mode === "compose_plan" || mode === "compose_adjustments") && ["tool_call", "mcp_call", "function_call", "tool_approval_request"].includes(event.type ?? "")) {
+      return { ...observation, failureCode: "COMPOSE_TOOL_CALL_FORBIDDEN" };
+    }
+    if (!["tool_call", "tool_call_output"].includes(event.type ?? "")) return observation;
     if (event.id && seen.has(event.id)) return { ...observation, duplicate: true };
     if (event.id) seen.add(event.id);
     const data = event.content?.find((block) => block.type === "data")?.data;
@@ -141,15 +200,13 @@ export function createToolEvidence(mode: EvidenceMode) {
       if (calls.has(callId)) return { ...observation, duplicate: true };
       const name = typeof data.name === "string" ? data.name : "";
       const category = name === "bash" ? commandCategory(data.arguments) : null;
-      calls.set(callId, { name, category });
+      const sourceCategory = expected?.get(JSON.stringify(shellWords(commandText(data.arguments)))) ?? "景点与旅行商品";
+      calls.set(callId, { name, category, sourceCategory });
       observation.commandCategory = category;
       observation.isFlyaiSearch = category === "flyai_search";
       if (name === "web_search") {
         webSearchCalls += 1;
-        if (mode === "local_research" && webSearchCalls > 8 && successfulWebSearches === 0) {
-          // Over-searching only counts as failure while nothing usable has come
-          // back. Once real sources are verified, an extra call is wasteful
-          // rather than wrong, and discarding those results would be worse.
+        if (mode === "local_research" && webSearchCalls > 4) {
           observation.failureCode = "WEB_SEARCH_LIMIT_EXCEEDED";
         }
       }
@@ -160,6 +217,7 @@ export function createToolEvidence(mode: EvidenceMode) {
         if (mode === "flyai_inventory") {
           if (category === "flyai_auth" || category === "environment_probe") observation.failureCode = "FLYAI_UNSUPPORTED_PROBE";
           else if (flyaiSearchCalls > 4 || bashCalls > 6 || helpCalls > 1) observation.failureCode = "FLYAI_SEARCH_LIMIT_EXCEEDED";
+          else if (category === "flyai_search" && expected && !expected.has(JSON.stringify(shellWords(commandText(data.arguments))))) observation.failureCode = "FLYAI_UNEXPECTED_QUERY";
         }
       }
       return observation;
@@ -189,10 +247,17 @@ export function createToolEvidence(mode: EvidenceMode) {
       observation.apiSucceeded = apiSucceeded(payload);
       if (!observation.failureCode && event.is_error === false && observation.exitCode === 0 && observation.interrupted !== true && observation.apiSucceeded) {
         successfulFlyaiSearches += 1;
+        flyaiCategories.add(call.sourceCategory);
         const urls = new Set<string>();
         collectFlyaiSources(isRecord(payload) ? payload.data : null, urls);
         observation.sourceUrlCount = urls.size;
         for (const url of urls) sources.add(url);
+        const retrieved = extractFlyaiSources(isRecord(payload) ? payload.data : null, call.sourceCategory);
+        if (retrieved.length) emptyFlyaiCategories.delete(call.sourceCategory);
+        else emptyFlyaiCategories.add(call.sourceCategory);
+        for (const source of retrieved) {
+          if (flyaiSources.size < 30) flyaiSources.set(source.url, source);
+        }
       } else if (!observation.failureCode) {
         observation.failureCode = "FLYAI_OUTPUT_UNVERIFIED";
       }
@@ -202,6 +267,11 @@ export function createToolEvidence(mode: EvidenceMode) {
   const result = (): ToolEvidence => ({
     webSearchCalls, successfulWebSearches, flyaiSearchCalls, successfulFlyaiSearches,
     sourceUrls: [...sources],
+    flyaiSources: [...flyaiSources.values()],
+    flyaiCategories: [...flyaiCategories],
+    emptyFlyaiCategories: [...emptyFlyaiCategories],
   });
   return { accept, result };
 }
+import { extractFlyaiSources } from "./planning/flyai-sources";
+import type { FlyaiSource } from "./flyai";

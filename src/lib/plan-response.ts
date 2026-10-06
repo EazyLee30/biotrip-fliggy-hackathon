@@ -1,9 +1,14 @@
-export type PlanProgress = { stage: string; message?: string };
+export type PlanProgress = {
+  stage: string;
+  message?: string;
+  status?: "running" | "ok" | "skipped" | "degraded";
+  elapsedMs?: number;
+};
 
 // The planning agents can run for several minutes. Send response bytes while
 // they work so browsers and intermediary proxies do not close an idle request.
 export function planEventStream(
-  generate: (progress: (event: PlanProgress) => void) => Promise<Response>,
+  generate: (progress: (event: PlanProgress) => void, recommendations: (event: PlanRecommendations) => void) => Promise<Response>,
   abort: () => void,
   signal: AbortSignal,
   heartbeatMs = 10_000,
@@ -51,7 +56,11 @@ export function planEventStream(
       heartbeat = setInterval(() => send(": keepalive\n\n"), heartbeatMs);
       void (async () => {
         try {
-          const response = await generate((progress) => event("progress", progress));
+          const response = await generate((progress) => event("progress", progress), (recommendations) => {
+            if (signal.aborted || closed) return;
+            const safe = decodePlanRecommendations(recommendations, recommendations.destination);
+            if (safe?.items.length) event("recommendations", safe);
+          });
           const payload: unknown = await response.json();
           event(response.ok ? "result" : "error", payload);
         } catch {
@@ -77,3 +86,6 @@ export function planEventStream(
     },
   });
 }
+import { decodePlanRecommendations, type PlanRecommendations } from "./planning-recommendations";
+
+export type { PlanRecommendation, PlanRecommendations } from "./planning-recommendations";

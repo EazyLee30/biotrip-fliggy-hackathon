@@ -1,0 +1,180 @@
+{
+  "checkedOn": "2026-10-04",
+  "assets": [
+    {
+      "path": "/ambience/coast-1280.webp",
+      "bytes": 79818,
+      "sha256": "2d19cccf56724c437f55d2c7ebc59341ae9fee698ae28ea41ddb2673364b2cfb",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/coast-640.webp",
+      "bytes": 13234,
+      "sha256": "a9b4ed5fb83439a6e057f24be0f7efb6729a5566d52e0c6b4e8def3114f2feab",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/courtyard-1280.webp",
+      "bytes": 127532,
+      "sha256": "041abb45feedc36d258888392c477a88c8ed8d0a2480ed1d7c9b261df8d40ae9",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/courtyard-640.webp",
+      "bytes": 21062,
+      "sha256": "ce01e5ea79e7efe0cf7392f5371b9688fc19296bfac104a08700da1374e51b17",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/forest-1280.webp",
+      "bytes": 148010,
+      "sha256": "c924d74408ef2848b2c8357ed3ebbc6b51a2e6b39b49df3e622dd792513d1f9e",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/forest-640.webp",
+      "bytes": 23318,
+      "sha256": "a032e9e2084248d1d185b840ac63fc8584bcb8681712fc985d08c608147691fb",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/rest-1280.webp",
+      "bytes": 92410,
+      "sha256": "ae0adc1839b7cea368df306fa2e714d811ff19e54962964cdb72e7b23f8d3121",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/rest-640.webp",
+      "bytes": 16096,
+      "sha256": "d67f6f1fb66c6f7fd7dc4f968efb710bf6af8599cde953fc2a6da8c0b62aaaa1",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/tea-1280.webp",
+      "bytes": 68022,
+      "sha256": "339992eb1c4ee931e0ad6019ea6e08a00eb119f715ae6c693c5225853f475487",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/tea-640.webp",
+      "bytes": 13648,
+      "sha256": "ba89647853422cc92bc821f09bceef6fd1dd06cb5f1330c821d11f53fef9d658",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/train-1280.webp",
+      "bytes": 62868,
+      "sha256": "7cd5bcb014d41434e2764ce62dd644bccd546290b79cd30b2a97d195ce7f0e80",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    },
+    {
+      "path": "/ambience/train-640.webp",
+      "bytes": 11126,
+      "sha256": "8b7bd0c60a35b63623a311680500a861fd85e4dc0b28c8a5e846fdf82b9c28a0",
+      "kind": "generated_ambience",
+      "venueEvidence": false,
+      "sourceDeclaredByRepository": "OpenAI image generation",
+      "generationReceiptArchived": false,
+      "rightsBasis": "Applicable generation-service terms; not a third-party photo license"
+    }
+  ],
+  "fontLicense": "public/fonts/LICENSE-jakarta.txt",
+  "termsReference": "https://openai.com/policies/row-terms-of-use/",
+  "limitations": "历史氛围图声明为生成，原始生成回执尚未归档。新增实景照片已保存原图、原作品许可页面、CC0 法律文本、校验指纹；供应商商品图不属于本地可再分发图库。",
+  "licensedDestinationPhotos": [
+    {
+      "id": "hangzhou-broken-bridge",
+      "kind": "destination_photo",
+      "destination": "杭州",
+      "location": "西湖断桥",
+      "author": "Suicasmo",
+      "capturedAt": "2025-05-05",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/File:Broken_Bridge_(Hangzhou)_20250505.jpg",
+      "sourceRevision": "1099075040",
+      "originalUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Broken_Bridge_%28Hangzhou%29_20250505.jpg",
+      "originalSha256": "3fa7a6403a47b329a1328d804a5e3753d89b3c422c0aeeadf57faaabbfb9b5f7",
+      "originalSha1": "45f41a96a78e98071ebb98636b4d65a992d108f1",
+      "expectedCommonsSha1": "45f41a96a78e98071ebb98636b4d65a992d108f1",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode.en",
+      "checkedOn": "2026-10-04",
+      "processing": "按原比例缩小，WebP 编码；未改变画面内容；交付副本不保留 EXIF",
+      "allowedUses": [
+        "website_destination_cover",
+        "share_cover",
+        "share_poster"
+      ],
+      "limitations": "地点实景照片，不证明营业状态、当前天气或商品实物；作者许可声明不代表商家或人物为 BioTrip 背书。",
+      "derivatives": [
+        {
+          "path": "/destinations/hangzhou-broken-bridge-1280.webp",
+          "bytes": 81874,
+          "sha256": "17642a92b33bd6ef820c652b6133ef61d4755d825ea73b04b7f406e17ddcdb88",
+          "width": 1280,
+          "height": 853
+        },
+        {
+          "path": "/destinations/hangzhou-broken-bridge-640.webp",
+          "bytes": 24026,
+          "sha256": "0f4047c310015106cb3eab20d466e2a7d56d0a1ec75727f8487aa6af5ae58a6c",
+          "width": 640,
+          "height": 427
+        }
+      ],
+      "archivedEvidence": [
+        {
+          "path": "docs/design-exploration/licenses/hangzhou-broken-bridge-source.html",
+          "sha256": "d47115b1c77c2316c47756624ce733c09afe8bd92a0d93503a9296abf9bc1d28"
+        },
+        {
+          "path": "docs/design-exploration/licenses/cc0-1.0-legalcode.html",
+          "sha256": "b43732f4c1463b087cf10d4daf8d8766514b2bf8f21bc5ef50905f95be227726"
+        }
+      ]
+    }
+  ]
+}

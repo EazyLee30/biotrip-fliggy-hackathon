@@ -1,136 +1,177 @@
 "use client";
+import { JourneyVisualButton } from "./planner/journey-visual-button";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import type { SetStateAction } from "react";
 import type { Journey, JourneyDraft, JourneyFeedback, JourneyGeneratedPlan, JourneyMemory } from "@/lib/journey-types";
-import { Ambience, Badge, BreathingSession, Gauge, Icon, Modal } from "./zen-ui";
+import { applyWhoopResponse, EMPTY_WHOOP_DISPLAY, readWhoopResponse, whoopMetricLabel, whoopReadFailed, whoopStatusLabel, type WhoopDisplay } from "@/lib/whoop-display";
+import { Badge, BreathingSession, dismissSheetsBeforeNavigation, Icon, Modal } from "./zen-ui";
 import { journeyMachine } from "./planner/machine";
 import { ProvenanceBlock } from "./planner/blocks/provenance";
-import { PlacePicker } from "./planner/place-picker";
-import { DateRangePicker } from "./planner/date-range";
-import { PaceMatrix } from "./planner/blocks/pace-matrix";
-import { GuardrailToggles } from "./planner/blocks/guardrails";
-import { DayReview } from "./planner/blocks/day-review";
+import { PlacePickerDialog } from "./planner/place-picker";
+import { reservationTextError } from "./planner/reservations";
+import { clearPendingReservations, readPendingReservations, savePendingReservations } from "./planner/pending-reservations";
+import { PhraseInput, QuickRating } from "./planner/quick-inputs";
+import { ShareDialog } from "./planner/share-dialog";
+import { ItineraryEditor } from "./planner/itinerary-editor";
+import { applyItineraryOperations, itineraryDates, rebasePendingReservations, syncItineraryReservations, type ItineraryOperation } from "@/lib/itinerary-edit";
+import { decodePlanRecommendations, mergeRecommendations, type PlanRecommendation } from "@/lib/planning-recommendations";
+import { resolveTripTiming } from "@/lib/trip-timing";
+import { validateTravelRange } from "./planner/travel-dates";
+import { parseSchedule, planningDateError, scheduleError } from "@/lib/planner-input";
+import { PLACES } from "@/lib/places";
+import { JourneyCover } from "./planner/journey-cover";
+import { EditorialImage } from "./planner/editorial-image";
 import { PlaceDetail } from "./planner/blocks/place-detail";
 import { BreathingOverlay } from "./planner/breathing-overlay";
+import ProfileView from "./profile-view";
+import { appJourneyUrl, readAppView, type AppView, type NavigationIntent } from "./planner/app-navigation";
+import { useDraftPersistence } from "./planner/use-draft-persistence";
+import { useAppNavigation } from "./planner/use-app-navigation";
+import { watchPlanningJob } from "./planner/planning-job-viewer";
+import { AppDock } from "./planner/app-dock";
+import { coverForDestination, coverCaption } from "@/lib/visual-assets";
+import type { PlanningJob } from "@/lib/planning/jobs";
+import { RequestError, submitPlanningJob } from "./planner/planning-job-submit";
+import { createAccountRefresh } from "./planner/account-refresh";
+import { usePlanDecisions } from "./planner/use-plan-decisions";
+import { destinationDate, upcomingActivity } from "./planner/journey-reading";
+import { Timeline } from "./planner/activity-timeline";
+import { PlanningProgress } from "./planner/planning-progress";
+import { PlanReviewDialog } from "./planner/plan-review-dialog";
 import styles from "./zen-dashboard.module.css";
 
-type View = "today" | "adjust" | "explore" | "create" | "breathing" | "sleep" | "fatigue";
-type WhoopSummary = { recoveryScore: number | null; hrvRmssdMilli: number | null; restingHeartRate: number | null; sleepMinutes: number | null; sleepPerformance: number | null; cycleStrain: number | null; cycleSteps: number | null; measuredAt: string | null };
-type TripForm = Required<NonNullable<JourneyDraft["trip"]>>;
-type PlanPayload = Partial<JourneyGeneratedPlan> & { journey?: Journey; error?: string; diagnostic?: { stage?: string; status?: number; code?: string } };
+import { RestView } from "./planner/rest-view";
+import { SleepView } from "./planner/sleep-view";
+import { AdjustmentView } from "./planner/adjust/adjustment-view";
+import { BodyRhythmView } from "./planner/body-rhythm-view";
+import { CreateJourneyView } from "./planner/create-journey-view";
+import { SERVICES, AMBIENCE, STEP_LABELS, number } from "./planner/view-values";
+
+type View = AppView;
+import { EMPTY_TRIP, usePlannerInputs, type TripForm } from "./planner/use-planner-inputs";
 type TravelProfile = { homeCity: string; travelStyle: "flexible" | "structured"; foodPreferences: string; sensoryPreferences: string[]; memoryNotes: string };
 type Place = JourneyGeneratedPlan["plan"]["places"][number];
 type ItineraryItem = JourneyGeneratedPlan["plan"]["itinerary"][number] & { date?: string };
-const EMPTY_TRIP: TripForm = { originCity: "", destinationCity: "", departureDate: "", departureTimezone: "Asia/Shanghai", destinationTimezone: "", returnDate: "", planningStyle: "flexible", paceLevel: "balanced", guardrails: { morningLight: false, protectReservations: true, sensoryBreaks: true }, itineraryText: "", requestedServices: ["hotels", "attractions", "transport", "local_food", "relaxation"], foodPreferences: "" };
-const SERVICES = [["flights", "航班"], ["hotels", "住宿"], ["attractions", "景点"], ["transport", "当地交通"], ["local_food", "当地餐食"], ["relaxation", "放松体验"], ["onsen", "温泉"], ["massage", "按摩"], ["travel_insurance", "旅行保险"], ["medical_info", "医疗信息"]] as const;
-const AMBIENCE = ["安静少噪", "自然气息", "柔和光线", "人少宽松"];
-const ZONES = [["Asia/Shanghai", "中国标准时间"], ["Asia/Tokyo", "日本标准时间"], ["Asia/Seoul", "韩国标准时间"], ["Asia/Hong_Kong", "香港时间"], ["Asia/Taipei", "台北时间"], ["Asia/Singapore", "新加坡时间"], ["Asia/Bangkok", "泰国时间"], ["Asia/Makassar", "巴厘岛时间"], ["Asia/Kolkata", "印度时间"], ["Europe/London", "英国时间"], ["Europe/Paris", "中欧时间"], ["America/New_York", "美国东部时间"], ["America/Los_Angeles", "美国西部时间"], ["Australia/Sydney", "悉尼时间"], ["Pacific/Auckland", "新西兰时间"]] as const;
-const CITY_ZONES: Array<[RegExp, string]> = [[/东京|大阪|京都|箱根|日本|tokyo|osaka|kyoto|japan/i, "Asia/Tokyo"], [/首尔|韩国|seoul|korea/i, "Asia/Seoul"], [/台北|台湾|taipei/i, "Asia/Taipei"], [/香港|hong kong/i, "Asia/Hong_Kong"], [/新加坡|singapore/i, "Asia/Singapore"], [/曼谷|清迈|泰国|bangkok|chiang mai/i, "Asia/Bangkok"], [/巴厘|乌布|印尼|bali|ubud/i, "Asia/Makassar"], [/伦敦|英国|london/i, "Europe/London"], [/巴黎|法国|paris/i, "Europe/Paris"], [/纽约|new york/i, "America/New_York"], [/洛杉矶|旧金山|西雅图|los angeles|san francisco|seattle/i, "America/Los_Angeles"], [/悉尼|墨尔本|澳大利亚|sydney|melbourne/i, "Australia/Sydney"], [/奥克兰|新西兰|auckland/i, "Pacific/Auckland"], [/上海|北京|广州|深圳|杭州|成都|重庆|中国|shanghai|beijing|china/i, "Asia/Shanghai"]];
-const INTENTS = [
-  { value: "安静恢复", name: "静心修复", subtitle: "深度休息与舒缓", icon: "leaf" as const, detail: "给睡眠、安静空间和休息多留一些时间，以轻松的节奏重新充电。", tags: ["轻松步行", "充足留白"] },
-  { value: "慢慢探索", name: "平衡探索", subtitle: "温柔发现，一路从容", icon: "compass" as const, detail: "在街巷、展馆和当地文化之间慢慢走，把探索与坐下来休息安排在一起。", tags: ["文化体验", "灵活衔接"] },
-  { value: "补充活力", name: "自然感官之旅", subtitle: "靠近自然，补充活力", icon: "forest" as const, detail: "寻找绿意、自然光和开阔空间，结合你实际的身体感受安排活动密度。", tags: ["自然气息", "适度活动"] },
-  { value: "未指定", name: "城市随心漫游", subtitle: "美食与城市生活", icon: "food" as const, detail: "不用设定目标，跟随你的口味与兴趣，把喜欢的餐食、空间和体验连成旅程。", tags: ["地方餐食", "自由选择"] },
-];
-const STEP_LABELS = ["旅行意图", "目的地与时间", "节奏与连接", "行程确认"];
-const VIEW_LABELS: Record<View, string> = { today: "今日", adjust: "调整", explore: "探索", create: "创建旅程", breathing: "呼吸练习", sleep: "睡眠与时区", fatigue: "调整身体节奏" };
+type ProgressState = "running" | "ok" | "skipped" | "degraded";
+
+
+
+
+
+const VIEW_LABELS: Record<View, string> = { today: "行程", adjust: "调整", explore: "发现", profile: "我的", create: "创建旅程", breathing: "呼吸练习", sleep: "睡眠与时区", fatigue: "调整身体节奏" };
 const STATUS_LABELS = { draft: "草稿", planned: "待出发", active: "旅途中", completed: "已完成" };
-function timezoneFor(city: string) { return CITY_ZONES.find(([pattern]) => pattern.test(city))?.[1] ?? ""; }
-/** Instantly returns to the top; a smooth scroll fights the view swap instead of helping it. */
-function scrollToTop() { window.scrollTo({ top: 0, left: 0, behavior: "auto" }); }
-function toggle(items: string[], item: string) { return items.includes(item) ? items.filter((value) => value !== item) : [...items, item]; }
-function number(value: number | null | undefined, digits = 0) { return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "—"; }
-function sleepDuration(value: number | null | undefined) { return typeof value === "number" ? `${Math.floor(value / 60)} 时 ${Math.round(value % 60)} 分` : "—"; }
+function timezoneFor(city: string) { return PLACES.find((place) => place.city === city)?.timezone ?? ""; }
+
+
+
 function dateLabel(value?: string | null, withTime = false) { if (!value) return "尚未同步"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "时间未知" : new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", dateStyle: "medium", ...(withTime ? { timeStyle: "short" as const } : {}) }).format(date); }
 function publicUrl(value: string) { try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? url.href : ""; } catch { return ""; } }
-function activityIcon(name: string) { return /交通|地铁|列车|巴士|航班|机场|乘车/.test(name) ? "train" as const : /茶|咖啡|餐|食/.test(name) ? "cup" as const : /酒店|住宿|睡|午休|休息/.test(name) ? "bed" as const : /公园|森林|自然|庭院/.test(name) ? "forest" as const : "compass" as const; }
-function requestedView(value: string | null): View { return value && Object.hasOwn(VIEW_LABELS, value) ? value as View : "today"; }
+
+function writeJourneyId(id: string | null) {
+  try { if (id) window.localStorage.setItem("biotrip:last-journey:v1", id); else window.localStorage.removeItem("biotrip:last-journey:v1"); } catch { /* Storage is optional in private browsing. */ }
+  window.history.replaceState(window.history.state, "", appJourneyUrl(window.location.search, window.location.hash, id));
+}
+function redirectForExpiredSession() {
+  // A full document navigation drops the expired account's in-memory health and journey state.
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`);
+}
 async function jsonRequest<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...options });
   const payload = await response.json().catch(() => null) as (T & { error?: string }) | null;
-  if (response.status === 401) { window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`); throw new Error("登录已过期，请重新登录。"); }
-  if (!response.ok || !payload) throw new Error(payload?.error || "暂时无法完成操作，请稍后重试。");
+  if (response.status === 401) { redirectForExpiredSession(); throw new RequestError("登录已过期，请重新登录。", 401); }
+  if (!response.ok || !payload) throw new RequestError(payload?.error || "暂时无法完成操作，请稍后重试。", response.ok ? 502 : response.status);
   return payload;
 }
-async function readPlanResponse(response: Response, onProgress: (stage: string, message: string) => void): Promise<PlanPayload> {
-  if (!response.headers.get("Content-Type")?.includes("text/event-stream")) return response.json();
-  if (!response.body) throw new Error("连接中断，你填写的信息仍然保留。");
-  const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = "", result: PlanPayload | undefined;
-  function frame(value: string) {
-    const lines = value.split(/\r?\n/), event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
-    const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
-    if (!data) return;
-    const payload = JSON.parse(data);
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("规划服务返回了无法读取的结果。");
-    if (event === "progress") onProgress(typeof payload.stage === "string" ? payload.stage : "preparing", typeof payload.message === "string" ? payload.message.slice(0, 160) : "正在整理旅程…");
-    if (event === "result" || event === "error") result = payload as PlanPayload;
-  }
-  try {
-    while (!result) {
-      const { value, done } = await reader.read(); buffer += decoder.decode(value, { stream: !done });
-      const frames = buffer.split(/\r?\n\r?\n/); buffer = frames.pop() ?? ""; for (const part of frames) frame(part);
-      if (done) { if (buffer.trim()) frame(buffer); break; }
-    }
-  } finally { await reader.cancel().catch(() => undefined); }
-  if (!result) throw new Error("连接中断，你填写的信息仍然保留。请重新尝试。");
-  return result;
-}
 
-function Timeline({ items, onSelect }: { items: ItineraryItem[]; onSelect: (item: ItineraryItem) => void }) {
-  return <div className={styles.timeline}>{items.map((item, index) => <button className={styles.stop} key={`${item.date ?? ""}-${item.time}-${index}`} onClick={() => onSelect(item)}><div className={styles.stopTop}><span className={styles.time}>{item.time}</span><Badge tone={item.fixed ? "green" : "muted"}><Icon name={item.fixed ? "lock" : "leaf"} size={12} />{item.fixed ? "固定安排" : "可灵活调整"}</Badge></div><div className={styles.stopBody}><div className={styles.stopIcon}><Icon name={activityIcon(item.name)} size={29} /><small>{item.fixed ? "保留安排" : "旅程节点"}</small></div><div className={styles.stopCopy}><h4>{item.name}</h4><p>{item.detail}</p><small>查看安排 <Icon name="arrow" size={13} /></small></div></div></button>)}</div>;
-}
 
 export function PlannerDashboard() {
+  const { form, setForm, scheduleOpen, setScheduleOpen, intention, setIntention, fatigue, setFatigue, stress, setStress, bodyFeedback, setBodyFeedback, moodFeedback, setMoodFeedback, ambient, setAmbient, colorTone, setColorTone, profileMemory, setProfileMemory, includeMemory, setIncludeMemory, includeWhoop, setIncludeWhoop, consent, setConsent } = usePlannerInputs();
   const [authReady, setAuthReady] = useState(false);
   const [initError, setInitError] = useState("");
   const [accountName, setAccountName] = useState("");
-  const [view, setView] = useState<View>("today");
   const [step, setStep] = useState(0);
   const [serviceReady, setServiceReady] = useState<boolean | null>(null);
   const [whoopConfigured, setWhoopConfigured] = useState(false);
-  const [whoopConnected, setWhoopConnected] = useState(false);
-  const [health, setHealth] = useState<WhoopSummary | null>(null);
-  const [healthError, setHealthError] = useState("");
+  const [whoopDisplay, setWhoopDisplay] = useState<WhoopDisplay>(EMPTY_WHOOP_DISPLAY);
+  const whoopConnected = whoopDisplay.connected;
+  const health = whoopDisplay.summary;
+  const healthError = whoopDisplay.message;
+  const healthLoading = ["checking", "syncing"].includes(whoopDisplay.status);
+  const healthStatus = whoopStatusLabel(whoopDisplay.status);
   const [journeys, setJourneys] = useState<Journey[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [form, setForm] = useState<TripForm>(EMPTY_TRIP);
-  const [intention, setIntention] = useState("安静恢复");
-  const [fatigue, setFatigue] = useState("");
-  const [stress, setStress] = useState("");
-  const [bodyFeedback, setBodyFeedback] = useState("");
-  const [moodFeedback, setMoodFeedback] = useState("");
-  const [ambient, setAmbient] = useState<string[]>([]);
-  const [colorTone, setColorTone] = useState("未指定");
-  const [profileMemory, setProfileMemory] = useState("");
+
+
+  const scheduleItems = useMemo(() => parseSchedule(form.itineraryText) ?? [], [form.itineraryText]);
+  const reservationRange = useMemo(() => {
+    try {
+      const { arrivalDate, endDate } = resolveTripTiming({ trip: form });
+      return { start: arrivalDate, end: endDate };
+    } catch {
+      return { start: form.departureDate, end: form.returnDate || form.departureDate };
+    }
+  }, [form]);
+  const scheduleValidation = useMemo(() => reservationTextError(form.itineraryText, reservationRange.start, reservationRange.end), [form.itineraryText, reservationRange]);
+
+
+
+
+
+
+
+
   const [learnedDefaults, setLearnedDefaults] = useState<{ planningStyle?: "flexible" | "structured"; intention?: string; colorTone?: string; ambientPreferences?: string[]; requestedServices?: string[]; foodPreferences?: string; destinations?: string[]; homeCities?: string[] } | null>(null);
   const [memories, setMemories] = useState<JourneyMemory[]>([]);
-  const [includeMemory, setIncludeMemory] = useState(true);
-  const [includeWhoop, setIncludeWhoop] = useState(true);
-  const [consent, setConsent] = useState(false);
+
+
+
+  const [progressOpen, setProgressOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [planningReady, setPlanningReady] = useState<"saved" | "review" | null>(null);
   const [progressStage, setProgressStage] = useState("preparing");
   const [progressMessage, setProgressMessage] = useState("");
+  const [progressStates, setProgressStates] = useState<Record<string, ProgressState>>({});
+  const [waitingItems, setWaitingItems] = useState<PlanRecommendation[]>([]);
+  const [waitingDestination, setWaitingDestination] = useState("");
+  const [waitingPlace, setWaitingPlace] = useState<PlanRecommendation | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const clearNavigationError = useCallback(() => setError(""), []);
+  const { view, profileVisited, navigateNow, resetScroll } = useAppNavigation(clearNavigationError);
   const [toast, setToast] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [cityPicker, setCityPicker] = useState<"origin" | "destination" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Journey | null>(null);
   const [activity, setActivity] = useState<ItineraryItem | null>(null);
+  const [dayDetail, setDayDetail] = useState("");
+  const [metricDetail, setMetricDetail] = useState<"recovery" | "steps" | null>(null);
+  const [planEditor, setPlanEditor] = useState<{ initialDate?: string; initialIndex?: number } | null>(null);
   const [place, setPlace] = useState<Place | null>(null);
   const [filter, setFilter] = useState("全部");
+  const [discoverySource, setDiscoverySource] = useState<"fliggy" | "local">("fliggy");
+  const [dayPositions, setDayPositions] = useState<Record<string, number>>({});
   const [selectedDay, setSelectedDay] = useState("");
   const [consentOpen, setConsentOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [sharePath, setSharePath] = useState("");
+  const [sharesRevision, setSharesRevision] = useState(0);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackNote, setFeedbackNote] = useState("");
+  const [feedbackFatigue, setFeedbackFatigue] = useState("");
+  const [feedbackStress, setFeedbackStress] = useState("");
   const [remember, setRemember] = useState(false);
   const [memoryNote, setMemoryNote] = useState("");
   const [feedback, setFeedback] = useState<{ key: string; items: JourneyFeedback[] }>({ key: "", items: [] });
+  const [activeJob, setActiveJob] = useState<PlanningJob | null>(null);
   const [previousPlan, setPreviousPlan] = useState<JourneyGeneratedPlan | null>(null);
   const [now, setNow] = useState<number | null>(null);
   const generation = useRef<AbortController | null>(null);
+  const healthRequest = useRef<AbortController | null>(null);
+  const dashboardAlive = useRef(true);
+  const navigationPending = useRef(false);
+  const latestJourney = useRef<Journey | null>(null);
+  const draftSession = useRef(0);
   const journey = journeys.find((entry) => entry.id === selectedId) ?? null;
   const plan = journey?.plan ?? null;
   // Lifecycle capabilities are derived once so every surface agrees on what is
@@ -140,26 +181,62 @@ export function PlannerDashboard() {
   const readyToPlan = serviceReady === true;
 
   const fillDraft = useCallback((draft: JourneyDraft) => {
+    setScheduleOpen(false);
     setForm({ ...EMPTY_TRIP, ...draft.trip }); setIntention(draft.intention ?? "安静恢复"); setFatigue(draft.fatigue ? String(draft.fatigue) : ""); setStress(draft.subjectiveStress ? String(draft.subjectiveStress) : ""); setAmbient((draft.ambientPreferences ?? []).filter((entry) => AMBIENCE.includes(entry))); setColorTone(draft.colorTone ?? "未指定"); setBodyFeedback(draft.bodyFeedback ?? ""); setMoodFeedback(draft.moodFeedback ?? ""); setConsent(false);
-  }, []);
+  }, [setAmbient, setBodyFeedback, setColorTone, setConsent, setFatigue, setForm, setIntention, setMoodFeedback, setScheduleOpen, setStress]);
+  const restoreJourneyDraft = useCallback((value: Journey) => {
+    const capabilities = journeyMachine(value).can;
+    if (!capabilities.canEdit && capabilities.canReplan) {
+      const pending = readPendingReservations({ journeyId: value.id, version: value.version, baseItineraryText: value.draft.trip?.itineraryText ?? "" });
+      if (pending !== null) { fillDraft({ ...value.draft, trip: { ...value.draft.trip, itineraryText: pending } }); return; }
+    } else clearPendingReservations(value.id);
+    fillDraft(value.draft);
+  }, [fillDraft]);
   const replaceJourney = useCallback((value: Journey) => {
+    latestJourney.current = value;
     setJourneys((current) => [value, ...current.filter((entry) => entry.id !== value.id)]); setSelectedId(value.id);
+    writeJourneyId(value.id);
   }, []);
-  const navigate = useCallback((next: View) => {
-    setView(next); setError(""); const params = new URLSearchParams(window.location.search); params.set("view", next); window.history.replaceState(null, "", `/?${params}`); scrollToTop();
-  }, []);
+  const { candidate, setCandidate, versions, setVersions, decideCandidate, showVersions, restoreVersion } = usePlanDecisions({
+    alive: dashboardAlive, latestJourney, session: draftSession, lockRef: navigationPending, blocked: busy || loading,
+    request: jsonRequest, replaceJourney, fillDraft, setBusy, setError, setToast, setPreviousPlan,
+  });
+  useEffect(() => { latestJourney.current = journey; }, [journey]);
+  const syncHealth = useCallback(async (checkConnection = false) => {
+    if (healthRequest.current) return;
+    const controller = new AbortController(); healthRequest.current = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(25_000)]);
+    setWhoopDisplay((current) => ({ ...current, status: "syncing", message: "" }));
+    try {
+      if (checkConnection) {
+        const status = await jsonRequest<{ configured: boolean; connected: boolean }>("/api/whoop/status", { signal });
+        if (!dashboardAlive.current || healthRequest.current !== controller) return;
+        setWhoopConfigured(status.configured);
+        setWhoopDisplay((current) => ({ ...current, connected: status.connected }));
+      }
+      const response = await fetch("/api/whoop/summary", { cache: "no-store", signal });
+      if (response.status === 401) { redirectForExpiredSession(); return; }
+      const payload = await readWhoopResponse(response);
+      if (!dashboardAlive.current || healthRequest.current !== controller) return;
+      setWhoopDisplay((current) => applyWhoopResponse(current, payload, response.ok));
+      if (payload.connected === false || payload.reauthorizationRequired) setIncludeWhoop(false);
+    } catch {
+      if (dashboardAlive.current && healthRequest.current === controller && !controller.signal.aborted) setWhoopDisplay((current) => whoopReadFailed(current, signal.aborted ? "WHOOP 本次读取超时，请稍后重试。" : "WHOOP 暂时无法读取，请检查网络后重试。"));
+    } finally { if (healthRequest.current === controller) healthRequest.current = null; }
+  }, [setIncludeWhoop]);
 
   useEffect(() => {
+    dashboardAlive.current = true;
     let alive = true;
-    const query = new URLSearchParams(window.location.search); setView(requestedView(query.get("view"))); setNow(Date.now());
-    const listener = () => setView(requestedView(new URLSearchParams(window.location.search).get("view")));
-    window.addEventListener("popstate", listener);
+    const query = new URLSearchParams(window.location.search);
+    const initialView = readAppView(window.location.search, window.location.hash);
     void (async () => {
       const response = await fetch("/api/auth/me", { cache: "no-store" });
       if (!response.ok) throw new Error("账户服务暂时不可用，请重试。");
       const auth = await response.json() as { signedIn: boolean; account?: { display_name?: string; email: string } };
       if (!alive) return;
-      if (!auth.signedIn) { window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`); return; }
+      navigateNow(initialView); setNow(Date.now());
+      if (!auth.signedIn) { window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`); return; }
       setAccountName(auth.account?.display_name || auth.account?.email.split("@")[0] || "旅行者");
       const responses = await Promise.allSettled([
         jsonRequest<{ ready: boolean }>("/api/plan/status"),
@@ -173,9 +250,10 @@ export function PlannerDashboard() {
       const [status, wearable, profile, trips, memory, learned] = responses;
       setServiceReady(status.status === "fulfilled" && status.value.ready);
       if (wearable.status === "fulfilled") {
-        setWhoopConfigured(Boolean(wearable.value.configured)); setWhoopConnected(Boolean(wearable.value.connected)); setIncludeWhoop(Boolean(wearable.value.connected));
-        if (wearable.value.connected) void jsonRequest<{ connected: boolean; summary?: WhoopSummary }>("/api/whoop/summary").then((value) => { if (alive) { setWhoopConnected(value.connected); setHealth(value.summary ?? null); } }).catch((caught) => { if (alive) setHealthError(caught instanceof Error ? caught.message : "WHOOP 同步暂时失败，可继续使用自评规划。"); });
-      }
+        setWhoopConfigured(Boolean(wearable.value.configured)); setIncludeWhoop(Boolean(wearable.value.connected));
+        setWhoopDisplay((current) => ({ ...current, connected: Boolean(wearable.value.connected), status: wearable.value.connected ? "connected" : "not_connected" }));
+        if (wearable.value.connected && initialView !== "profile") void syncHealth();
+      } else setWhoopDisplay((current) => whoopReadFailed(current, "WHOOP 授权状态暂时无法读取，请重试。"));
       let defaultDraft: JourneyDraft = {};
       if (profile.status === "fulfilled" && profile.value.profile) {
         const value = profile.value.profile; setProfileMemory(value.memoryNotes);
@@ -185,18 +263,24 @@ export function PlannerDashboard() {
       if (learned.status === "fulfilled") setLearnedDefaults(learned.value.defaults);
       if (trips.status === "fulfilled") {
         setJourneys(trips.value.journeys);
-        const picked = trips.value.journeys.find((entry) => entry.id === query.get("journey")) ?? trips.value.journeys.find((entry) => entry.status === "active") ?? trips.value.journeys.find((entry) => entry.status === "planned") ?? trips.value.journeys[0];
-        if (picked && query.get("view") !== "create") { setSelectedId(picked.id); fillDraft(picked.draft); if (picked.plan) setStep(3); }
-        else fillDraft(defaultDraft);
+        const explicitId = query.get("journey");
+        let rememberedId: string | null = null;
+        try { rememberedId = window.localStorage.getItem("biotrip:last-journey:v1"); } catch { /* Optional preference. */ }
+        const picked = explicitId ? trips.value.journeys.find((entry) => entry.id === explicitId)
+          : initialView === "create" ? undefined
+          : trips.value.journeys.find((entry) => entry.id === rememberedId) ?? trips.value.journeys.find((entry) => entry.status === "active") ?? trips.value.journeys.find((entry) => entry.status === "planned") ?? trips.value.journeys[0];
+        if (picked) { replaceJourney(picked); restoreJourneyDraft(picked); setStep(picked.plan ? 3 : 0); }
+        else { fillDraft(defaultDraft); writeJourneyId(null); if (explicitId) setError("这段旅程已删除或无法访问。可以选择其他旅程，或创建新的旅行计划。"); }
       } else { fillDraft(defaultDraft); setError("暂时无法读取旅程，请刷新重试。你可以先填写新的旅行计划。"); }
       setAuthReady(true);
       const outcome = query.get("whoop");
-      if (outcome === "connected") setToast("WHOOP 已连接；每次规划都可以选择是否使用身体数据。");
-      if (outcome === "denied" || outcome === "failed") setHealthError("WHOOP 连接未完成，请重试连接。仍可使用自评规划。");
+      if (outcome === "connected") setToast("WHOOP 授权已保存，正在单独核对身体记录。每次规划仍由你选择是否使用。");
+      if ((outcome === "denied" || outcome === "failed") && !(wearable.status === "fulfilled" && wearable.value.connected)) setWhoopDisplay((current) => ({ ...current, message: "WHOOP 授权未完成，可重新连接，也可使用自评规划。" }));
     })().catch((caught) => { if (alive) { setInitError(caught instanceof Error ? caught.message : "暂时无法打开 BioTrip。"); setAuthReady(true); } });
-    return () => { alive = false; generation.current?.abort(); window.removeEventListener("popstate", listener); };
-  }, [fillDraft]);
+    return () => { alive = false; dashboardAlive.current = false; generation.current?.abort(); healthRequest.current?.abort(); healthRequest.current = null; };
+  }, [fillDraft, restoreJourneyDraft, replaceJourney, syncHealth, navigateNow, setIncludeWhoop, setProfileMemory]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 5000); return () => clearTimeout(timer); }, [toast]);
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 60_000); return () => window.clearInterval(timer); }, []);
   useEffect(() => {
     const current = journey;
     if (!current || !["active", "completed"].includes(current.status)) return;
@@ -204,29 +288,44 @@ export function PlannerDashboard() {
     let alive = true;
     void jsonRequest<{ feedback: JourneyFeedback[] }>(`/api/journeys/${current.id}/feedback`).then((value) => { if (alive) setFeedback({ key: journeyKey, items: value.feedback }); }).catch(() => undefined);
     return () => { alive = false; };
-  }, [journey?.id, journey?.version, journey?.status]);
+  }, [journey]);
   // Feedback belongs to a specific journey version, so a stale list is simply
   // not shown rather than being cleared with an extra render.
   const feedbackKey = journey && ["active", "completed"].includes(journey.status) ? `${journey.id}:${journey.version}` : "";
   const feedbackHistory = feedback.key === feedbackKey ? feedback.items : [];
 
+  const itineraryStart = journey?.draft.trip?.departureDate;
   const itineraryDays = useMemo(() => {
     const grouped = new Map<string, ItineraryItem[]>();
-    for (const item of plan?.plan.itinerary ?? []) { const row = item as ItineraryItem; const key = row.date || journey?.draft.trip?.departureDate || "行程"; grouped.set(key, [...(grouped.get(key) ?? []), row]); }
+    for (const item of plan?.plan.itinerary ?? []) { const row = item as ItineraryItem; const key = row.date || itineraryStart || "行程"; grouped.set(key, [...(grouped.get(key) ?? []), row]); }
     return [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [plan, journey?.draft.trip?.departureDate]);
-  const actualDay = itineraryDays.some(([day]) => day === selectedDay) ? selectedDay : itineraryDays.find(([day]) => now && day === new Intl.DateTimeFormat("sv-SE", { timeZone: journey?.draft.trip?.destinationTimezone || "Asia/Shanghai" }).format(new Date(now)))?.[0] ?? itineraryDays[0]?.[0] ?? "";
+  }, [plan, itineraryStart]);
+  const actualDay = itineraryDays.some(([day]) => day === selectedDay) ? selectedDay : itineraryDays.find(([day]) => now && day === destinationDate(now, journey?.draft.trip?.destinationTimezone || "Asia/Shanghai"))?.[0] ?? itineraryDays[0]?.[0] ?? "";
   const dayItems = itineraryDays.find(([day]) => day === actualDay)?.[1] ?? [];
+  useEffect(() => {
+    if (view !== "today") return;
+    const rail = document.querySelector<HTMLElement>('[aria-label="选择行程日期"]');
+    const selected = rail ? Array.from(rail.querySelectorAll<HTMLElement>('[data-day]')).find(button => button.dataset.day === actualDay) : null;
+    if (!rail || !selected) return;
+    const offset = selected.getBoundingClientRect().left - rail.getBoundingClientRect().left;
+    rail.scrollTo({ left: rail.scrollLeft + offset - (rail.clientWidth - selected.clientWidth) / 2, behavior: "instant" });
+  }, [actualDay, view]);
+
   const places = useMemo(() => {
-    const all: Place[] = [...(plan?.plan.places ?? []), ...(plan?.localServices ?? []).map((entry) => ({ name: entry.name, category: SERVICES.find(([key]) => key === entry.kind)?.[1] || entry.kind, reason: entry.detail, source: entry.source, url: entry.sourceUrl }))];
+    const all: Place[] = [...(plan?.plan.places ?? []), ...(plan?.localServices ?? []).map((entry) => ({ sourceKind: entry.sourceKind ?? "reference" as const, name: entry.name, category: SERVICES.find(([key]) => key === entry.kind)?.[1] || entry.kind, reason: entry.detail, source: entry.source, url: entry.sourceUrl }))];
     return all.filter((entry, index) => publicUrl(entry.url) && all.findIndex((other) => other.url === entry.url || other.name === entry.name) === index);
   }, [plan]);
-  const filteredPlaces = places.filter((entry) => filter === "全部" || (filter === "餐食茶饮" ? /餐|食|茶|咖啡/.test(entry.category + entry.name) : filter === "休息放松" ? /休|放松|温泉|按摩|住宿|酒店/.test(entry.category + entry.name) : /交通|航班|地铁|运输/.test(entry.category + entry.name)));
+  const activitySource = activity?.sourceUrl ? places.find(entry => entry.url === activity.sourceUrl) : null;
+  const sourcePlaces = places.filter((entry) => discoverySource === "fliggy" ? entry.source === "飞猪实时搜索" : entry.source !== "飞猪实时搜索");
+  const filteredPlaces = sourcePlaces.filter((entry) => filter === "全部" || (filter === "餐食茶饮" ? /餐|食|茶|咖啡/.test(entry.category + entry.name) : filter === "休息放松" ? /休|放松|温泉|按摩|住宿|酒店/.test(entry.category + entry.name) : /交通|航班|地铁|运输/.test(entry.category + entry.name)));
 
-  function update<K extends keyof TripForm>(key: K, value: TripForm[K]) { setForm((current) => ({ ...current, [key]: value })); setConsent(false); }
-  function updateCity(key: "originCity" | "destinationCity", value: string, timezone?: string) {
-    setForm((current) => ({ ...current, [key]: value, [key === "originCity" ? "departureTimezone" : "destinationTimezone"]: timezone || timezoneFor(value) }));
-    setConsent(false);
+  function update<K extends keyof TripForm>(key: K, value: TripForm[K]) {
+    if (key === "itineraryText" && typeof value === "string" && journey && !planner.machine.can.canEdit && planner.machine.can.canReplan) {
+      const baseItineraryText = journey.draft.trip?.itineraryText ?? "";
+      if (value === baseItineraryText) clearPendingReservations(journey.id);
+      else savePendingReservations({ journeyId: journey.id, version: journey.version, baseItineraryText }, value);
+    }
+    setForm((current) => ({ ...current, [key]: value })); setConsent(false);
   }
   /** Server day, so the date strip cannot disagree with the trip maths. */
   // `now` is set during bootstrap and the wizard only renders once authReady, so
@@ -236,50 +335,110 @@ const today = useMemo(
   () => (now === null ? "" : new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date(now))),
   [now],
 );
-  const learnedOrigins = useMemo(() => learnedDefaults?.homeCities, [learnedDefaults]);
-  function draftFor(approved = false): JourneyDraft { return { intention, colorTone, fatigue: fatigue ? Number(fatigue) : null, subjectiveStress: stress ? Number(stress) : null, ambientPreferences: ambient, bodyFeedback: bodyFeedback.trim(), moodFeedback: moodFeedback.trim(), profileMemoryNotes: includeMemory ? memoryText : "", consent: approved, trip: form }; }
-  /** A new journey starts from defaults the traveller already proved they want. */
-  function newJourney() {
-    setSelectedId(null);
-    setForm((current) => ({
-      ...EMPTY_TRIP,
-      originCity: current.originCity,
-      departureTimezone: current.departureTimezone,
-      foodPreferences: learnedDefaults?.foodPreferences ?? current.foodPreferences,
-      planningStyle: learnedDefaults?.planningStyle ?? current.planningStyle,
-      ...(learnedDefaults?.requestedServices?.length ? { requestedServices: learnedDefaults.requestedServices } : {}),
-    }));
-    setFatigue(""); setStress(""); setBodyFeedback(""); setMoodFeedback("");
-    setIntention(learnedDefaults?.intention ?? "安静恢复");
-    if (learnedDefaults?.ambientPreferences?.length) setAmbient(learnedDefaults.ambientPreferences);
-    setConsent(false); setStep(0); setPreviousPlan(null); setSelectedDay(""); setSharePath(""); setPickerOpen(false); navigate("create");
-  }
-  function selectJourney(value: Journey) { setSelectedId(value.id); fillDraft(value.draft); setStep(value.plan ? 3 : 0); setSelectedDay(""); setPreviousPlan(null); setSharePath(""); setPickerOpen(false); const params = new URLSearchParams(window.location.search); params.set("journey", value.id); window.history.replaceState(null, "", `/?${params}`); navigate(value.plan ? "today" : "create"); }
+  const draftFor = useCallback((approved = false): JourneyDraft => ({ intention, colorTone, fatigue: fatigue ? Number(fatigue) : null, subjectiveStress: stress ? Number(stress) : null, ambientPreferences: ambient, bodyFeedback: bodyFeedback.trim(), moodFeedback: moodFeedback.trim(), profileMemoryNotes: includeMemory ? memoryText : "", consent: approved, trip: form }), [intention, colorTone, fatigue, stress, ambient, bodyFeedback, moodFeedback, includeMemory, memoryText, form]);
   function validateTrip() {
     if (![form.originCity, form.destinationCity, form.departureDate, form.departureTimezone, form.destinationTimezone].some((value) => value.trim()) || !form.originCity.trim() || !form.destinationCity.trim() || !form.departureDate.trim() || !form.departureTimezone.trim() || !form.destinationTimezone.trim()) {
       return "请选择出发地、目的地和出发日期，时区会自动带上。";
     }
     try { new Intl.DateTimeFormat("zh-CN", { timeZone: form.departureTimezone }).format(); new Intl.DateTimeFormat("zh-CN", { timeZone: form.destinationTimezone }).format(); } catch { return "请选择有效的出发地和目的地时区。"; }
-    if (form.returnDate && form.returnDate < form.departureDate) return "返程日期应晚于或等于出发日期。";
+    const dateError = validateTravelRange(form.departureDate, form.returnDate, today, journey?.status === "active") || planningDateError(form.departureDate, form.returnDate);
+    if (dateError) return dateError;
     if (form.originCity.trim() === form.destinationCity.trim()) return "出发地和目的地相同；请填写不同的城市。";
     return "";
   }
+  const { queueDraftSave, flushDraft } = useDraftPersistence({
+    latestJourney, draftSession, alive: dashboardAlive, draftFor,
+    destinationCity: form.destinationCity, originCity: form.originCity, view,
+    replaceJourney, setJourneys, request: jsonRequest,
+  });
+  const isDashboardAlive = useCallback(() => dashboardAlive.current, []);
+  const accountRefresh = useMemo(() => createAccountRefresh({
+    read: async () => {
+      const [profile, memory, learned] = await Promise.all([
+        jsonRequest<{ profile: TravelProfile | null; account: { display_name: string; email: string } }>("/api/profile"),
+        jsonRequest<{ memories: JourneyMemory[] }>("/api/memory"),
+        jsonRequest<{ defaults: NonNullable<typeof learnedDefaults> }>("/api/preferences"),
+      ]);
+      return { profile, memory, learned };
+    },
+    apply: ({ profile, memory, learned }) => {
+      setProfileMemory(profile.profile?.memoryNotes ?? ""); setMemories(memory.memories); setLearnedDefaults(learned.defaults);
+      setAccountName(profile.account.display_name || profile.account.email.split("@")[0] || "旅行者");
+    },
+  }), [setProfileMemory]);
+  const notifyAccountChanged = useCallback(() => {
+    accountRefresh.changed(); setConsent(false);
+  }, [accountRefresh, setConsent]);
+  const receiveWhoopDisplay = useCallback((update: SetStateAction<WhoopDisplay>) => {
+    if (typeof update !== "function" && !update.connected) {
+      // A disconnect must cancel an older home read before clearing the shared state.
+      healthRequest.current?.abort(); healthRequest.current = null;
+      setIncludeWhoop(false);
+    }
+    setWhoopDisplay(update);
+  }, [setIncludeWhoop]);
+  const refreshSavedAccount = useCallback(async () => {
+    const refreshed = await accountRefresh.refresh(isDashboardAlive);
+    return refreshed?.learned.defaults ?? null;
+  }, [accountRefresh, isDashboardAlive]);
+  const navigate = useCallback(async (next: View, intent: NavigationIntent = "open") => {
+    if (navigationPending.current || busy) return;
+    setError("");
+    await dismissSheetsBeforeNavigation();
+    if (!dashboardAlive.current) return;
+    setProgressOpen(false); navigateNow(next, intent);
+    if (!generation.current) void flushDraft().catch((caught) => { if(dashboardAlive.current) setError(caught instanceof Error ? caught.message : "草稿保存失败，请重试。"); });
+    void refreshSavedAccount().catch(() => undefined);
+  }, [busy, flushDraft, navigateNow, refreshSavedAccount]);
+  const navigateBack = useCallback(() => navigate("today", "back"), [navigate]);
+  /** Save the current journey before changing which draft owns the form. */
+  const newJourney = useCallback(async () => {
+    if (generation.current || navigationPending.current || busy) return;
+    navigationPending.current = true; setBusy(true); setError("");
+    try {
+      await dismissSheetsBeforeNavigation();
+      await flushDraft(); const savedDefaults = await refreshSavedAccount(); if (!dashboardAlive.current) return;
+      const defaults = savedDefaults ?? learnedDefaults;
+      draftSession.current += 1; latestJourney.current = null; setSelectedId(null); writeJourneyId(null);
+      setForm((current) => ({ ...EMPTY_TRIP, originCity: current.originCity, departureTimezone: current.departureTimezone, foodPreferences: defaults?.foodPreferences ?? current.foodPreferences, planningStyle: defaults?.planningStyle ?? current.planningStyle, ...(defaults?.requestedServices?.length ? { requestedServices: defaults.requestedServices } : {}) }));
+      setFatigue(""); setStress(""); setBodyFeedback(""); setMoodFeedback(""); setIntention(defaults?.intention ?? "安静恢复"); setAmbient(defaults?.ambientPreferences ?? []); setColorTone(defaults?.colorTone ?? "未指定");
+      setConsent(false); setStep(0); setPlanningReady(null); setWaitingPlace(null); setCandidate(null); setVersions(null); setPreviousPlan(null); setSelectedDay(""); setPickerOpen(false); navigateNow("create", "open");
+    } catch (caught) { if (dashboardAlive.current) setError(caught instanceof Error ? caught.message : "草稿保存失败，请重试后再新建旅程。"); }
+    finally { navigationPending.current = false; if (dashboardAlive.current) setBusy(false); }
+  }, [setSelectedDay, setCandidate, setVersions, busy, flushDraft, learnedDefaults, navigateNow, refreshSavedAccount, setAmbient, setBodyFeedback, setColorTone, setConsent, setFatigue, setForm, setIntention, setMoodFeedback, setStress]);
+  const selectJourney = useCallback(async (id: string) => {
+    if (navigationPending.current || busy) return;
+    navigationPending.current = true; setBusy(true); setError("");
+    try {
+      await dismissSheetsBeforeNavigation();
+      if (!generation.current) await flushDraft(); if (!dashboardAlive.current) return;
+      const value = journeys.find((entry) => entry.id === id);
+      if (!value) throw new Error("这段旅程已删除，请刷新旅程列表。");
+      draftSession.current += 1; replaceJourney(value); restoreJourneyDraft(value); setProgressOpen(false); setWaitingPlace(null); setStep(value.plan ? 3 : 0); setSelectedDay(""); setCandidate(null); setVersions(null); setPreviousPlan(null); setPickerOpen(false); navigateNow(value.plan ? "today" : "create");
+    } catch (caught) { if (dashboardAlive.current) setError(caught instanceof Error ? caught.message : "草稿保存失败，请重试后再切换旅程。"); }
+    finally { navigationPending.current = false; if (dashboardAlive.current) setBusy(false); }
+  }, [setSelectedDay, setCandidate, setVersions, busy, flushDraft, journeys, replaceJourney, restoreJourneyDraft, navigateNow]);
+  const openProfile = useCallback(() => navigate("profile"), [navigate]);
+  const refreshJourneys = useCallback(async () => {
+    const session = draftSession.current;
+    await flushDraft();
+    const payload = await jsonRequest<{ journeys: Journey[] }>("/api/journeys");
+    if (dashboardAlive.current && session === draftSession.current) {
+      setJourneys((current) => payload.journeys.map((entry) => {
+        const newer = current.find((saved) => saved.id === entry.id && saved.version > entry.version);
+        return newer ?? entry;
+      }));
+    }
+  }, [flushDraft]);
   async function saveDraft(quiet = false): Promise<Journey | null> {
+    if (generation.current || navigationPending.current || busy) return null;
     if (journey && ["active", "completed"].includes(journey.status)) { setError("旅途中请使用调整页重新规划；已完成的旅程可作为下次旅行参考。"); return null; }
-    setBusy(true); setError("");
-    try {
-      const payload = await jsonRequest<{ journey: Journey }>(journey ? `/api/journeys/${journey.id}` : "/api/journeys", { method: journey ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(journey ? { version: journey.version } : {}), title: form.destinationCity ? `${form.destinationCity}之旅` : "新的旅程", draft: draftFor() }) });
-      replaceJourney(payload.journey); if (!quiet) setToast("草稿已保存到你的账户，下次打开可以继续。"); return payload.journey;
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "草稿保存失败。"); return null; }
-    finally { setBusy(false); }
+    navigationPending.current = true; setBusy(true); setError("");
+    try { const value = await queueDraftSave(); if (value && !quiet) setToast(journeyMachine(value).can.canEdit ? "草稿已保存到你的账户，下次打开可以继续。" : "当前行程已保存。调整内容会在重新生成成功后保存。"); return value; }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "草稿保存失败。"); return null; }
+    finally { navigationPending.current = false; setBusy(false); }
   }
-  async function autoSaveDraft(): Promise<void> {
-    if (journey && planner.machine.status && !planner.machine.can.canEdit) return;
-    try {
-      const payload = await jsonRequest<{ journey: Journey }>(journey ? `/api/journeys/${journey.id}` : "/api/journeys", { method: journey ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(journey ? { version: journey.version } : {}), title: form.destinationCity ? `${form.destinationCity}之旅` : "新的旅程", draft: draftFor() }) });
-      replaceJourney(payload.journey);
-    } catch { /* Silent by design: the next change or navigation retries it. */ }
-  }
+  const autoSaveDraft = useEffectEvent(async () => { try { await queueDraftSave(); } catch { /* Manual save shows errors; unchanged drafts do not loop. */ } });
   /**
    * Silent persistence: the draft is written shortly after the traveller stops
    * typing, with no busy state, toast or error, so there is never a save button
@@ -288,77 +447,185 @@ const today = useMemo(
    * spawns an empty journey.
    */
   useEffect(() => {
-    if (!authReady || loading) return;
+    if (!authReady || loading || busy || !["create", "adjust", "explore"].includes(view)) return;
     if (journey && planner.machine.status && !planner.machine.can.canEdit) return;
     const hasIntent = Boolean(journey || form.destinationCity.trim() || form.originCity.trim());
     if (!hasIntent) return;
     const timer = setTimeout(() => { void autoSaveDraft(); }, 1400);
     return () => clearTimeout(timer);
     // Re-arm whenever the draft content changes.
-  }, [authReady, loading, form, intention, fatigue, stress, ambient, colorTone, bodyFeedback, moodFeedback, journey?.id, journey?.version, journey?.status]);
+  }, [authReady, loading, busy, view, form, intention, fatigue, stress, ambient, colorTone, bodyFeedback, moodFeedback, includeMemory, profileMemory, memories, journey, planner.machine.can.canEdit, planner.machine.status]);
   async function advance() {
-    if (step === 1) { const message = validateTrip(); if (message) { setError(message); return; } }
-    setError(""); const saved = await saveDraft(true); if (!saved) return; setStep((current) => Math.min(3, current + 1)); window.scrollTo({ top: 0, behavior: "smooth" });
+    if (step === 0) { const message = validateTrip(); if (message) { setError(message); return; } }
+    setError(""); const saved = await saveDraft(true); if (!saved) return; setStep((current) => Math.min(2, current + 1)); window.scrollTo({ top: 0, behavior: "smooth" });
   }
-  async function generatePlan() {
-    const validation = validateTrip(); if (validation) { setError(validation); setStep(1); navigate("create"); return; }
-    if (!readyToPlan) { setError("旅行规划服务暂时未就绪。草稿可以正常保存，请稍后重试。"); return; }
-    if (!consent) { setError("请确认本次使用的资料，再开始生成。"); return; }
-    setConsentOpen(false); setError(""); setLoading(true); setProgressStage("preparing"); setProgressMessage("正在准备这次旅程…");
-    const controller = new AbortController(); generation.current = controller;
-    const timeout = setTimeout(() => controller.abort(), 400_000);
-    let target = journey;
+  function checkScheduleBeforePlanning() {
+    if (!scheduleValidation) return true;
+    setConsentOpen(false); setScheduleOpen(true); setStep(1); navigateNow("create"); setError(scheduleValidation);
+    return false;
+  }
+  function openPlanningConsent() {
+    if (!checkScheduleBeforePlanning()) return;
+    const validation = validateTrip();
+    if (validation) { setStep(0); navigateNow("create"); setError(validation); return; }
+    setError(""); setConsent(false); setConsentOpen(true);
+  }
+  async function followPlanningJob(job: PlanningJob, controller: AbortController) {
+    setActiveJob(job); setPlanningReady(null); setLoading(true); setError("");
     try {
-      if (!target) {
-        const payload = await jsonRequest<{ journey: Journey }>("/api/journeys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft: draftFor() }) });
-        target = payload.journey; replaceJourney(target);
-      }
-      if (controller.signal.aborted) return;
-      const response = await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json", Accept: "text/event-stream" }, signal: controller.signal, body: JSON.stringify({ ...draftFor(true), includeWhoop: whoopConnected && includeWhoop, journeyId: target.id, expectedVersion: target.version }) });
-      const payload = await readPlanResponse(response, (stage, message) => { setProgressStage(stage); setProgressMessage(message); });
-      if (!response.ok || payload.error) {
-        const diagnostics = payload.diagnostic; const code = typeof diagnostics?.code === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(diagnostics.code) ? diagnostics.code : "";
-        throw new Error(`${payload.error || "这次规划未能完成，请重试。"}${code ? `（${code}）` : ""}`);
-      }
-      if (payload.source !== "live" || !payload.journey || !payload.plan?.itinerary?.length) throw new Error("规划没有完整保存，请刷新旅程列表确认后重试。");
-      setPreviousPlan(target.plan); replaceJourney(payload.journey); fillDraft(payload.journey.draft); setStep(3); setSelectedDay(""); setSharePath(""); setToast("行程已生成并保存到你的账户。"); navigate("create");
-    } catch (caught) {
-      if (controller.signal.aborted) {
-        setToast("已停止等待，草稿保留。正在核对服务器保存状态。");
-        try { const values = await jsonRequest<{ journeys: Journey[] }>("/api/journeys"); setJourneys(values.journeys); const saved = values.journeys.find((entry) => entry.id === target?.id); if (saved?.plan && saved.version !== target?.version) { fillDraft(saved.draft); setStep(3); setToast("服务已完成；已恢复保存好的行程。"); } } catch { setError("已取消等待。请稍后刷新旅程列表，核对是否已完成。"); }
-      } else setError(caught instanceof Error ? caught.message : "规划暂时失败。你的原行程和草稿仍然保留。");
-    } finally { clearTimeout(timeout); generation.current = null; setLoading(false); }
+      await watchPlanningJob({
+        signal: controller.signal,
+        read: (cursor, signal) => jsonRequest(`/api/plan/jobs/${job.id}?after=${cursor}`, { signal }),
+        onReconnect: () => setProgressMessage("连接暂时中断，后台继续执行，正在恢复进度…"),
+        onUpdate: async (result) => {
+          if (!dashboardAlive.current) return true;
+          setActiveJob(result.job);
+          for (const event of result.events) {
+            if (event.kind === "progress") {
+              const stage = String(event.payload.stage || "preparing"), status = String(event.payload.status || "running") as ProgressState;
+              setProgressStage(stage); setProgressMessage(String(event.payload.message || "正在整理旅程…"));
+              setProgressStates(current=>({...current,preparing:"ok",[stage]:status}));
+            } else {
+              const batch=decodePlanRecommendations(event.payload, String(event.payload.destination ?? ""));
+              if(batch){setWaitingDestination(batch.destination);setWaitingItems(current=>mergeRecommendations(current,batch.items));}
+            }
+          }
+          if (result.job.state === "awaiting_approval") { setPlanningReady("review");setProgressMessage("新方案已准备好，确认后才会替换当前行程。可以继续浏览，或查看调整方案。"); return true; }
+          if (result.job.state === "completed") {
+            const payload=await jsonRequest<{journey:Journey}>(`/api/journeys/${job.journeyId}`, { signal: controller.signal });
+            if (!dashboardAlive.current || controller.signal.aborted) return true;
+            clearPendingReservations(payload.journey.id);setJourneys(current => current.some(entry => entry.id === payload.journey.id && entry.version > payload.journey.version) ? current : [payload.journey, ...current.filter(entry => entry.id !== payload.journey.id)]);setPlanningReady("saved");setProgressMessage("行程已生成并保存。可以继续浏览推荐，准备好后再查看行程。");return true;
+          }
+          if (["failed","indeterminate"].includes(result.job.state)) {setError(result.job.error || "规划未完成，原行程仍保留。");return true;}
+          if (result.job.state === "cancelled") {setToast("后台任务已停止，原行程仍保留。");return true;}
+          return false;
+        },
+      });
+    } catch (caught) {if(dashboardAlive.current)setError(caught instanceof Error?caught.message:"暂时无法读取后台进度。");}
+    finally {if(generation.current===controller){generation.current=null;if(dashboardAlive.current)setLoading(false);}}
   }
-  async function transition(status: "active" | "completed") {
-    if (!journey) return; setBusy(true); setError("");
-    try { const payload = await jsonRequest<{ journey: Journey }>(`/api/journeys/${journey.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: journey.version, status }) }); replaceJourney(payload.journey); setToast(status === "active" ? "旅程已开始，今天的安排和体验都在这里。" : "旅程已完成，可以记录这次最喜欢的安排。" ); navigate("today"); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "旅程状态更新失败。"); } finally { setBusy(false); }
+  async function openPlanningResult() {
+    if (!activeJob || busy) return;
+    setBusy(true);
+    try {
+      await dismissSheetsBeforeNavigation();
+      await flushDraft();
+      const payload = await jsonRequest<{ journey: Journey }>(`/api/journeys/${activeJob.journeyId}`);
+      if (!dashboardAlive.current) return;
+      draftSession.current += 1; replaceJourney(payload.journey); restoreJourneyDraft(payload.journey);
+      setWaitingPlace(null); setProgressOpen(false); setPlanningReady(null);
+      navigateNow("today", "open");
+      if (activeJob.state === "awaiting_approval") setCandidate(activeJob);
+      else setActiveJob(null);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "暂时无法打开结果，请重试。"); }
+    finally { if (dashboardAlive.current) setBusy(false); }
   }
+  async function recoverPlanning() {
+    if (generation.current || !dashboardAlive.current) return;
+    try {
+      const payload=await jsonRequest<{jobs:PlanningJob[]}>("/api/plan/jobs");
+      if (!dashboardAlive.current) return;
+      const planJobs=payload.jobs.filter(job=>job.mode !== "adjust");
+      const saved=planJobs.find(job=>["queued","running","cancel_requested"].includes(job.state)) ?? planJobs.find(job=>job.state==="awaiting_approval" && job.journeyId===latestJourney.current?.id) ?? planJobs.find(job=>job.state==="completed" && job.journeyId===latestJourney.current?.id && (latestJourney.current?.version ?? 0)<=job.baseVersion);
+      if(!saved)return;
+      if(saved.state==="awaiting_approval"){setActiveJob(saved);setPlanningReady("review");return;}
+      const trip=await jsonRequest<{journey:Journey}>(`/api/journeys/${saved.journeyId}`);
+      if(!dashboardAlive.current || generation.current)return;
+      setWaitingDestination(trip.journey.draft.trip?.destinationCity || "");
+      const controller=new AbortController();generation.current=controller;void followPlanningJob(saved,controller);
+    } catch { /* The saved task remains recoverable from the explicit progress button. */ }
+  }
+  const recoverOnMount = useEffectEvent(recoverPlanning);
+  useEffect(()=>{if(authReady)void recoverOnMount();},[authReady]);
+  async function generatePlan() {
+    if (generation.current || navigationPending.current || busy) return;
+    const validation=validateTrip();if(validation){setError(validation);return;}
+    if(!checkScheduleBeforePlanning() || !readyToPlan || !consent)return;
+    if(candidate){setError("请先采用或放弃待确认的方案，再重新调整。");return;}
+    if (activeJob?.state === "awaiting_approval") { setProgressOpen(true); setToast("请先处理已经准备好的调整方案。"); return; }
+    setActiveJob(null);
+    setConsentOpen(false);setError("");setProgressOpen(true);setPlanningReady(null);setLoading(true);setWaitingItems([]);setWaitingDestination(form.destinationCity);setProgressStates({preparing:"running"});setProgressMessage("正在提交后台任务…");
+    const controller=new AbortController();generation.current=controller;
+    const requestDraft=draftFor(true);
+    try {
+      const target=await queueDraftSave();if(!target)throw new Error("请先保存草稿。");
+      const submitted = await submitPlanningJob({ request: jsonRequest, signal: controller.signal,
+        body: { ...requestDraft, includeWhoop: whoopConnected && includeWhoop, includeMemory, journeyId: target.id, expectedVersion: target.version },
+      });
+      await followPlanningJob(submitted, controller);
+    } catch(caught){if(dashboardAlive.current){setProgressOpen(false);setError(caught instanceof Error?caught.message:"后台任务暂未启动，草稿保留。");}}
+    finally {if(generation.current===controller){generation.current=null;if(dashboardAlive.current)setLoading(false);}}
+  }
+  const transition = useCallback(async (status: "active" | "completed") => {
+    if (!journey || generation.current || navigationPending.current || busy) return; navigationPending.current = true; setBusy(true); setError("");
+    try { const payload = await jsonRequest<{ journey: Journey }>(`/api/journeys/${journey.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: journey.version, status }) }); replaceJourney(payload.journey); setToast(status === "active" ? "旅程已开始，今天的安排和体验都在这里。" : "旅程已完成，可以记录这次最喜欢的安排。" ); navigateNow("today"); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "旅程状态更新失败。"); } finally { navigationPending.current = false; setBusy(false); }
+  }, [journey, busy, replaceJourney, navigateNow]);
   async function removeJourney() {
-    if (!deleteTarget) return; setBusy(true);
-    try { await jsonRequest(`/api/journeys/${deleteTarget.id}?version=${deleteTarget.version}`, { method: "DELETE" }); setJourneys((current) => current.filter((entry) => entry.id !== deleteTarget.id)); if (selectedId === deleteTarget.id) { setSelectedId(null); setForm(EMPTY_TRIP); setStep(0); } setDeleteTarget(null); setToast("旅程已删除。"); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "暂时无法删除旅程。"); } finally { setBusy(false); }
-  }
-  async function syncHealth() {
-    setBusy(true); setHealthError("");
-    try { const payload = await jsonRequest<{ connected: boolean; summary?: WhoopSummary }>("/api/whoop/summary"); setHealth(payload.summary ?? null); setWhoopConnected(payload.connected); setToast(payload.summary ? "已读取最新的 WHOOP 记录。" : "暂无可用身体记录，可使用主观感受继续规划。"); }
-    catch (caught) { setHealthError(caught instanceof Error ? caught.message : "WHOOP 同步失败。"); } finally { setBusy(false); }
+    if (!deleteTarget || generation.current || navigationPending.current || busy) return;
+    const deleted = deleteTarget;
+    navigationPending.current = true; setBusy(true); setError("");
+    try {
+      // Drain automatic saves first so no late write can restore a deleted selection.
+      await flushDraft();
+      if (!dashboardAlive.current) return;
+      const target = latestJourney.current?.id === deleted.id ? latestJourney.current : deleted;
+      await jsonRequest(`/api/journeys/${target.id}?version=${target.version}`, { method: "DELETE" });
+      if (!dashboardAlive.current) return;
+      clearPendingReservations(target.id);
+      setJourneys((current) => current.filter((entry) => entry.id !== target.id));
+      if (latestJourney.current?.id === target.id) {
+        draftSession.current += 1; latestJourney.current = null; setSelectedId(null); writeJourneyId(null);
+        setForm(EMPTY_TRIP); setStep(0); setSelectedDay(""); setPreviousPlan(null); setCandidate(null); setVersions(null);
+        setActivity(null); setPlace(null); setShareOpen(false); setConsent(false); setPlanEditor(null);
+      }
+      setDeleteTarget(null); setToast("旅程已删除。");
+    } catch (caught) { if (dashboardAlive.current) setError(caught instanceof Error ? caught.message : "暂时无法删除旅程。"); }
+    finally { navigationPending.current = false; if (dashboardAlive.current) setBusy(false); }
   }
   async function sendFeedback(note = feedbackNote, completedBreathing = false) {
-    if (!journey) return; setBusy(true); setError("");
+    if (!journey || navigationPending.current || generation.current || busy) return;
+    navigationPending.current = true; setBusy(true); setError("");
     try {
-      const payload = await jsonRequest<{ journey: Journey; remembered: boolean }>(`/api/journeys/${journey.id}/feedback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: journey.version, note, ...(completedBreathing ? {} : { fatigue: fatigue ? Number(fatigue) : null, subjectiveStress: stress ? Number(stress) : null, bodyFeedback, moodFeedback, remember, ...(remember ? { memoryNote } : {}) }) }) });
-      replaceJourney(payload.journey); setFeedbackOpen(false); setFeedbackNote(""); setMemoryNote(""); setRemember(false); setToast(payload.remembered ? "体验已记录，你选定的偏好已存入旅程记忆。" : "体验已记录。" );
+      const payload = await jsonRequest<{ journey: Journey; remembered: boolean }>(`/api/journeys/${journey.id}/feedback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: journey.version, note, ...(completedBreathing ? {} : { fatigue: feedbackFatigue ? Number(feedbackFatigue) : null, subjectiveStress: feedbackStress ? Number(feedbackStress) : null, remember, ...(remember ? { memoryNote } : {}) }) }) });
+      const baseItineraryText = payload.journey.draft.trip?.itineraryText ?? "";
+      if (form.itineraryText !== baseItineraryText) savePendingReservations({ journeyId: payload.journey.id, version: payload.journey.version, baseItineraryText }, form.itineraryText);
+      replaceJourney(payload.journey); setFeedbackOpen(false); setFeedbackNote(""); setFeedbackFatigue(""); setFeedbackStress(""); setMemoryNote(""); setRemember(false); setToast(payload.remembered ? "体验已记录，你选定的偏好已存入旅程记忆。" : "体验已记录。" );
       if (payload.remembered) { const payload = await jsonRequest<{ memories: JourneyMemory[] }>("/api/memory"); setMemories(payload.memories); }
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "暂时无法记录体验。"); } finally { setBusy(false); }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "暂时无法记录体验。"); } finally { navigationPending.current = false; setBusy(false); }
   }
-  async function createShare() {
-    if (!plan) return; setBusy(true); setError("");
-    try { const payload = await jsonRequest<{ path: string }>("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trip: { destinationCity: journey?.draft.trip?.destinationCity || form.destinationCity }, plan: { headline: plan.plan.headline, summary: plan.plan.summary, places: plan.plan.places.map(({ name, category, url }) => ({ name, category, url })) } }) }); setSharePath(payload.path); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "分享链接创建失败。"); } finally { setBusy(false); }
-  }
-  async function copyShare() { try { await navigator.clipboard.writeText(new URL(sharePath, window.location.origin).href); setToast("分享链接已复制。"); } catch { setError("复制失败，可以长按链接手动复制。"); } }
   function startAdjustment(light = false) { if (journey?.status === "completed") { setToast("这段旅程已完成，可以新建下一次旅程。"); return; } if (light) { setIntention("安静恢复"); setFatigue("4"); setBodyFeedback("希望减少步行，多安排坐下来休息，保留所有固定安排。"); } setConsent(false); navigate("adjust"); }
+  function openPlanEditor(item?: ItineraryItem) {
+    if (!journey?.plan || journey.status === "completed" || loading || busy) return;
+    if (!journey.planCurrent) { setToast("请先为当前偏好生成行程，再手动修改活动。"); return; }
+    const initialIndex = item ? journey.plan.plan.itinerary.findIndex(row => item.id ? row.id === item.id : row === item) : -1;
+    if (item && initialIndex < 0) { setToast("这项活动已变化，请重新打开当前行程。"); return; }
+    setActivity(null); setDayDetail(""); setError("");
+    setPlanEditor({ initialDate: item?.date || actualDay, ...(initialIndex >= 0 ? { initialIndex } : {}) });
+  }
+  async function saveManualItinerary(operations: ItineraryOperation[]) {
+    if (!journey?.plan || generation.current || navigationPending.current || busy) throw new Error("请等当前操作完成后再保存。");
+    const target = journey, session = draftSession.current;
+    const original = target.plan!.plan.itinerary;
+    const changes = applyItineraryOperations(original, operations, target.draft.trip ?? {});
+    const oldBase = target.draft.trip?.itineraryText ?? "";
+    const nextBase = syncItineraryReservations(oldBase, original, changes.reservationChanges, itineraryDates(original, target.draft.trip ?? {})[0]);
+    // Validate the merge before sending a write. Pending edits and deletions
+    // still belong to the traveller, even when a saved fixed activity changes.
+    const pending = rebasePendingReservations(oldBase, nextBase, form.itineraryText, changes.reservationChanges.filter((change) => !change.after).map((change) => change.before));
+    navigationPending.current = true; setBusy(true);
+    try {
+      const payload = await jsonRequest<{ journey: Journey }>(`/api/journeys/${target.id}/itinerary`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: target.version, operations }) });
+      const baseItineraryText = payload.journey.draft.trip?.itineraryText ?? "";
+      if (pending === baseItineraryText) clearPendingReservations(target.id);
+      else savePendingReservations({ journeyId: target.id, version: payload.journey.version, baseItineraryText }, pending);
+      if (!dashboardAlive.current || session !== draftSession.current || latestJourney.current?.id !== target.id) return;
+      replaceJourney(payload.journey);
+      setForm((current) => ({ ...current, itineraryText: pending }));
+      setPreviousPlan(target.plan); setConsent(false); setPlanEditor(null); setShareOpen(false);
+      setToast("活动与顺序已保存，无需重新生成行程。");
+    } finally { navigationPending.current = false; if (dashboardAlive.current) setBusy(false); }
+  }
   const closeConsent = useCallback(() => setConsentOpen(false), []);
   const closePicker = useCallback(() => setPickerOpen(false), []);
   const closeShare = useCallback(() => setShareOpen(false), []);
@@ -367,148 +634,137 @@ const today = useMemo(
   const closeActivity = useCallback(() => setActivity(null), []);
   const closeDelete = useCallback(() => setDeleteTarget(null), []);
 
-  function renderConsent() {
-    return <div className={styles.stack}><p>本次规划只使用你在这里确认的资料。规划完成后会保存行程，不执行预订或支付。</p><div className={styles.summaryList}><div className={styles.summaryRow}><span>旅行</span><strong>{form.originCity} → {form.destinationCity}</strong></div><div className={styles.summaryRow}><span>日期</span><strong>{dateLabel(`${form.departureDate}T12:00:00+08:00`)}{form.returnDate ? ` 至 ${form.returnDate}` : "（未定）"}</strong></div><div className={styles.summaryRow}><span>身体感受</span><strong>{fatigue ? `疲劳 ${fatigue}/5` : "未自评"}{stress ? ` · 压力 ${stress}/5` : ""}</strong></div><div className={styles.summaryRow}><span>WHOOP 记录</span><strong>{whoopConnected && includeWhoop ? health ? "使用最近同步的身体记录" : "读取授权范围内的最近记录" : "本次不使用"}</strong></div><div className={styles.summaryRow}><span>旅程记忆</span><strong>{includeMemory && memoryText ? "使用已保存的旅行偏好" : "本次不使用"}</strong></div></div><label className={styles.checkLabel}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>确认以上资料用于本次 AI 规划，并保存生成的行程。</span></label><button className={styles.primaryButton} disabled={!consent || loading || !readyToPlan} onClick={() => void generatePlan()}><Icon name="leaf" />{plan ? "生成调整后的行程" : "生成并保存行程"}</button><a className={styles.note} href="/privacy">查看数据与隐私说明 ↗</a></div>;
+  function renderWhoopStatus() {
+    const reconnect = whoopDisplay.status === "reauthorization_required";
+    return <div className={styles.inset} role="status"><Icon name="pulse" size={18} /><div><strong>WHOOP · {healthStatus}</strong><p>{healthLoading ? "授权与身体记录分别核对；有读数才会显示读取成功。" : healthError || (whoopConnected ? "授权已保存，尚未读取身体记录。" : "授权后可读取身体记录，也可使用自己的感受规划。")}</p>{whoopDisplay.retrievedAt ? <small className={styles.note}>最近成功读取{whoopDisplay.status === "partial" ? "（部分）" : ""}：{dateLabel(whoopDisplay.retrievedAt, true)}{whoopDisplay.retained ? "。标注为上次读数的项目沿用此前结果。" : ""}</small> : null}{health?.measuredAt ? <small className={styles.note} style={{ display: "block" }}>记录时间：{dateLabel(health.measuredAt, true)}</small> : null}<div className={styles.actions}>{whoopConnected || whoopDisplay.status === "failed" ? <button className={styles.textButton} disabled={busy || healthLoading} onClick={() => void syncHealth(!whoopConnected)}><Icon name="sync" size={14} />{healthLoading ? "读取中…" : "重试读取"}</button> : null}{!whoopConnected && whoopConfigured ? <a className={styles.textButton} href="/api/whoop/connect">{reconnect ? "重新授权 WHOOP" : "连接 WHOOP"} ↗</a> : null}</div></div></div>;
   }
-  function renderMetrics() { return <div className={styles.metrics}><div className={styles.metric}><span><Icon name="pulse" size={15} />恢复指数</span><strong>{number(health?.recoveryScore)}<small> / 100</small></strong><small>{health ? "WHOOP 最近记录" : "等待设备同步"}</small></div><button className={styles.metric} style={{ border: 0, textAlign: "left" }} onClick={() => navigate("sleep")}><span><Icon name="moon" size={15} />睡眠</span><strong>{health?.sleepMinutes != null ? number(health.sleepMinutes / 60, 1) : "—"}<small> 小时</small></strong><small>查看睡眠与时区 ↗</small></button><div className={styles.metric}><span><Icon name="walk" size={15} />步数</span><strong>{health?.cycleSteps != null ? health.cycleSteps.toLocaleString("zh-CN") : "—"}</strong><small>{health ? "WHOOP 周期记录" : "暂无测量数据"}</small></div></div>; }
-  function renderDayTabs() { return itineraryDays.length > 1 ? <div className={styles.filterRow} aria-label="选择行程日期">{itineraryDays.map(([day], index) => <button key={day} className={`${styles.chip} ${actualDay === day ? styles.active : ""}`} onClick={() => setSelectedDay(day)}>第 {index + 1} 天 {/^\d{4}-/.test(day) ? day.slice(5).replace("-", "/") : ""}</button>)}</div> : null; }
-  function renderPlanActions() { const { can, primary } = planner.machine; return <div className={styles.stack}>{primary?.key === "start" && can.canStart ? <button className={`${styles.primaryButton} ${styles.roundButton}`} disabled={busy} onClick={() => void transition("active")}>{primary.label} <Icon name="arrow" /></button> : primary?.key === "replan" && can.canRecordFeedback ? <div className={styles.actions}><button className={styles.secondaryButton} onClick={() => setFeedbackOpen(true)}><Icon name="edit" />记录感受</button><button className={styles.primaryButton} onClick={() => setConsentOpen(true)}><Icon name="tune" />{primary.label}</button></div> : primary?.key === "new_journey" && can.canPlanNew ? <button className={styles.primaryButton} onClick={() => newJourney()}><Icon name="plus" />{primary.label}</button> : can.canGenerate ? <button className={styles.primaryButton} onClick={() => { setStep(2); navigate("create"); }}>{primary?.label ?? "继续完善旅程"} <Icon name="arrow" /></button> : null}{can.canShare && <div className={styles.actions}><button className={styles.textButton} onClick={() => { setShareOpen(true); setSharePath(""); }}><Icon name="share" size={16} />分享旅程</button>{can.canReplan ? <button className={styles.textButton} onClick={() => startAdjustment()}><Icon name="tune" size={16} />自定义节奏</button> : can.canRecordFeedback ? <button className={styles.textButton} onClick={() => setFeedbackOpen(true)}>记录回忆</button> : null}</div>}</div>; }
+  function renderConsent() {
+    return <div className={styles.stack}><p>本次规划只使用你在这里确认的资料。规划完成后会保存行程，不执行预订或支付。</p><div className={styles.summaryList}><div className={styles.summaryRow}><span>旅行</span><strong>{form.originCity} → {form.destinationCity}</strong></div><div className={styles.summaryRow}><span>日期</span><strong>{dateLabel(`${form.departureDate}T12:00:00+08:00`)}{form.returnDate ? ` 至 ${form.returnDate}` : "（未定）"}</strong></div>{scheduleItems.length ? <div className={styles.summaryRow}><span>已确定安排</span><strong>{scheduleItems.slice(0, 3).map((item) => `${item.date || "抵达首日"} ${item.time} ${item.name}（${item.fixed ? "固定" : "灵活"}）`).join("；")}{scheduleItems.length > 3 ? `；共 ${scheduleItems.length} 项` : ""}</strong></div> : null}<div className={styles.summaryRow}><span>身体感受</span><strong>{fatigue ? `疲劳 ${fatigue}/5` : "未自评"}{stress ? ` · 压力 ${stress}/5` : ""}</strong></div>{bodyFeedback.trim() ? <div className={styles.summaryRow}><span>身体反馈</span><strong style={{ whiteSpace: "pre-wrap" }}>{bodyFeedback.trim()}</strong></div> : null}{moodFeedback.trim() ? <div className={styles.summaryRow}><span>心情反馈</span><strong style={{ whiteSpace: "pre-wrap" }}>{moodFeedback.trim()}</strong></div> : null}<div className={styles.summaryRow}><span>本次偏好</span><strong>{[intention, ...ambient, form.foodPreferences].filter(Boolean).join(" · ") || "未指定"}</strong></div><div className={styles.summaryRow}><span>WHOOP 记录</span><strong>{whoopConnected && includeWhoop ? "仅临近出发或旅途中使用最近记录，远期预案不读取" : "本次不使用"}</strong></div><div className={styles.summaryRow}><span>旅程记忆</span><strong>{includeMemory && memoryText ? "使用已保存的旅行偏好" : "本次不使用"}</strong></div></div><label className={styles.checkLabel}><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>确认以上资料用于本次 AI 规划，并保存生成的行程。</span></label><button className={styles.primaryButton} disabled={!consent || loading || busy || !readyToPlan} onClick={() => void generatePlan()}><Icon name="leaf" />{plan ? "生成调整后的行程" : "生成并保存行程"}</button><a className={styles.note} href="/privacy">查看数据与隐私说明 ↗</a></div>;
+  }
+  function renderMetrics() { return <div className={styles.metrics}><button type="button" className={styles.metric} style={{ border: 0, textAlign: "left" }} onClick={() => setMetricDetail("recovery")}><span><Icon name="pulse" size={15} />恢复指数</span><strong>{number(health?.recoveryScore)}<small> / 100</small></strong><small>{whoopMetricLabel(whoopDisplay, health?.recoveryScore, "recoveryScore")} · 详情 ↗</small></button><button type="button" className={styles.metric} style={{ border: 0, textAlign: "left" }} onClick={() => navigate("sleep")}><span><Icon name="moon" size={15} />睡眠</span><strong>{health?.sleepMinutes != null ? number(health.sleepMinutes / 60, 1) : "—"}<small> 小时</small></strong><small>{whoopMetricLabel(whoopDisplay, health?.sleepMinutes, "sleepMinutes")} · 查看时区 ↗</small></button><button type="button" className={styles.metric} style={{ border: 0, textAlign: "left" }} onClick={() => setMetricDetail("steps")}><span><Icon name="walk" size={15} />步数</span><strong>{health?.cycleSteps != null ? health.cycleSteps.toLocaleString("zh-CN") : "—"}</strong><small>{whoopMetricLabel(whoopDisplay, health?.cycleSteps, "cycleSteps")} · 详情 ↗</small></button></div>; }
+  function chooseDay(day: string) {
+    const key = `${journey?.id}:${actualDay}`;
+    const scrollTop = window.scrollY;
+    setDayPositions(current => ({ ...current, [key]: scrollTop }));
+    setSelectedDay(day);
+    requestAnimationFrame(() => window.scrollTo({ top: dayPositions[`${journey?.id}:${day}`] ?? 0, behavior: "instant" }));
+  }
+  function renderDayTabs() {
+    const currentDay = now ? destinationDate(now, journey?.draft.trip?.destinationTimezone || "Asia/Shanghai") : null;
+    return itineraryDays.length > 1 ? <div className={styles.filterRow} aria-label="选择行程日期">{currentDay && itineraryDays.some(([day]) => day === currentDay) ? <button className={styles.chip} onClick={() => chooseDay(currentDay)}>回到今天</button> : null}{itineraryDays.map(([day], index) => <button key={day} className={`${styles.chip} ${actualDay === day ? styles.active : ""}`} aria-pressed={actualDay === day} data-day={day} onClick={() => chooseDay(day)}>第 {index + 1} 天 {/^\d{4}-/.test(day) ? day.slice(5).replace("-", "/") : ""}</button>)}</div> : null; }
 
   function renderToday() {
-    return <div className={styles.stack}>
-      <div className={styles.syncBar}><span><i />{plan ? `目的地节奏 · ${journey?.draft.trip?.destinationCity}` : "跟随身体的节奏，开始下一段旅程"}</span><span className={styles.greenText}>{plan ? journey && STATUS_LABELS[journey.status] : "从容出发"}</span></div>
-      <div className={styles.wideGrid}><section className={`${styles.card} ${styles.hero}`}><div className={styles.heroTop}><div className={styles.heroCopy}><Badge><Icon name="leaf" size={14} />{health?.recoveryScore != null ? `恢复指数 ${number(health.recoveryScore)}%` : "你的旅程，你的节奏"}</Badge><h2>{plan?.plan.headline || `${accountName || "旅行者"}，把旅程调成刚刚好。`}</h2><p>{plan?.plan.summary || "从当下的身体感受出发，寻找安静的角落、真实的当地体验和舒服的旅行节奏。"}</p></div><Gauge value={health?.recoveryScore} /></div>{renderMetrics()}<small className={styles.note}>{health ? `测量时间：${dateLabel(health.measuredAt, true)}` : "连接 WHOOP 可同步身体记录，也可以使用自己的感受规划。"}</small>{!plan ? <button className={`${styles.primaryButton} ${styles.roundButton}`} onClick={newJourney}><Icon name="plus" />创建我的旅程</button> : null}</section>
-      <section className={styles.card}><div className={styles.sectionHead}><span><Icon name="tune" /><strong>节奏校准</strong></span><Badge tone="mint">随你调整</Badge></div><div className={styles.segmented}><button className={styles.active} onClick={() => plan ? setToast("当前显示的是账户中保存的行程。") : newJourney()}><Icon name="clock" size={16} />当前安排</button><button onClick={() => plan ? startAdjustment(true) : newJourney()}><Icon name="leaf" size={16} />轻松一些</button></div><div className={styles.inset}><Icon name="shield" size={18} /><p>{plan?.plan.reason || "旅行中的感受会变化。行程生成后，你可以保留固定预约，重新安排可调整的活动。"}</p></div><div className={styles.sectionHead}><small>{whoopConnected ? "WHOOP 已连接" : "身体记录由你掌控"}</small>{whoopConnected ? <button className={styles.textButton} disabled={busy} onClick={() => void syncHealth()}><Icon name="sync" size={14} />同步</button> : whoopConfigured ? <a className={styles.textButton} href="/api/whoop/connect">连接 WHOOP ↗</a> : <span className={styles.note}>支持主观感受规划</span>}</div></section></div>
-      {healthError ? <div className={styles.error} role="status">{healthError}<button className={styles.iconButton} aria-label="关闭设备提示" onClick={() => setHealthError("")}><Icon name="close" size={15} /></button></div> : null}
-      {plan ? <><div className={styles.sectionHead}><div><h3>{journey?.status === "completed" ? "旅程回顾" : "今日的旅程"}</h3><small className={styles.mutedText}>{actualDay && /^\d{4}-/.test(actualDay) ? dateLabel(`${actualDay}T12:00:00+08:00`) : "按你的旅行节奏安排"}</small></div><button className={styles.textButton} onClick={() => navigate("explore")}>{dayItems.length} 个节点 <Icon name="arrow" size={14} /></button></div>{renderDayTabs()}<Timeline items={dayItems} onSelect={setActivity} />{!journey?.planCurrent ? <div className={styles.inset}><Icon name="tune" /><p>偏好已经更新。这里显示上次生成的行程，重新生成后会保存新安排。</p></div> : null}<ProvenanceBlock provenance={plan.provenance} /></> : <><Ambience image="retreat" label="从安静的角落开始" title="留一点时间，给此刻的自己。" />{journeys.length ? <section className={styles.card}><div className={styles.sectionHead}><h3>继续你的旅程</h3><button className={styles.textButton} onClick={() => setPickerOpen(true)}>查看全部 ↗</button></div><div className={styles.journeyList}>{journeys.slice(0, 3).map((entry) => <div className={styles.journeyRow} key={entry.id}><button onClick={() => selectJourney(entry)}><strong>{entry.title}</strong><small>{STATUS_LABELS[entry.status]} · {dateLabel(entry.updatedAt)}</small></button><Icon name="arrow" size={16} /></div>)}</div></section> : null}</>}
-      <div className={styles.breathingPrompt}><div><span className={styles.iconTile}><Icon name="wind" /></span><div><strong>3 分钟舒缓呼吸</strong><small>给忙碌的旅途一个轻轻的停顿</small></div></div><button onClick={() => navigate("breathing")}>开始</button></div>
-      {plan ? renderPlanActions() : null}
-      {journey?.status === "active" ? <div className={styles.actions}><button className={styles.textButton} onClick={() => navigate("fatigue")}><Icon name="leaf" size={16} />我有点累</button><button className={styles.textButton} disabled={busy} onClick={() => void transition("completed")}>完成这段旅程 <Icon name="check" size={16} /></button></div> : null}
-      {feedbackHistory.length ? <section className={styles.card}><div className={styles.sectionHead}><h3>最近的旅行感受</h3><Badge tone="muted">已保存</Badge></div>{feedbackHistory.slice(0, 3).map((entry) => <div className={styles.inset} key={entry.id}><Icon name="edit" size={16} /><div><p>{entry.note || [entry.bodyFeedback, entry.moodFeedback].filter(Boolean).join(" · ") || `疲劳自评 ${entry.fatigue ?? "—"}/5`}</p><small className={styles.mutedText}>{dateLabel(entry.createdAt, true)}{entry.remembered ? " · 已加入旅程记忆" : ""}</small></div></div>)}</section> : null}
+    const cover = coverForDestination();
+    const next = journey?.status === "active" && now ? upcomingActivity(plan?.plan.itinerary ?? [], now, journey.draft.trip?.destinationTimezone || "Asia/Shanghai") : null;
+    return <div className={`${styles.stack} ${styles.journeyHome}`}>
+      <section className={`${styles.journeyCover} ${plan ? styles.savedCover : ""}`} style={{ backgroundImage: `image-set(url("${cover.thumbnail}") 1x, url("${cover.src}") 2x)` }} aria-label={cover.alt}>
+        <JourneyCover images={plan?.visuals?.cover} fallback={cover.src} alt={cover.alt} /><div style={{ position: "relative", zIndex: 1 }}><small>{journey ? STATUS_LABELS[journey.status] : "从容出发"} · 旅行手记</small><h1>{journey?.draft.trip?.destinationCity || "留一点时间，给旅途。"}</h1><p>{plan ? `${journey?.draft.trip?.departureDate || ""}${journey?.draft.trip?.returnDate ? ` — ${journey.draft.trip.returnDate}` : ""}` : `${accountName || "旅行者"}，从一处想去的地方开始。`}</p></div><a className={styles.imageCredit} href="/credits">{coverCaption(cover)}</a>
+      </section>
+      {plan ? <>
+        <div className={styles.journeyToolbar}><button className={styles.textButton} disabled={busy} onClick={() => setPickerOpen(true)}><Icon name="calendar" size={16} />切换旅程</button><div>{planner.machine.can.canReplan ? <button className={styles.textButton} disabled={busy} onClick={() => openPlanEditor()}><Icon name="edit" size={16} />编辑</button> : null}<button className={styles.textButton} disabled={busy} onClick={() => setShareOpen(true)}><Icon name="share" size={16} />分享</button></div></div>
+        {renderDayTabs()}
+        {next ? <button className={styles.nextActivity} onClick={() => { setSelectedDay(next.date || actualDay); setActivity(next); }}><span>接下来 · {next.time}</span><strong>{next.name}</strong><Icon name="arrow" size={16} /></button> : null}
+        <section className={styles.journeySchedule}><div className={styles.sectionHead}><h3>{journey?.status === "completed" ? "旅程回顾" : "当天安排"}</h3><button className={styles.textButton} onClick={() => setDayDetail(actualDay)}>{dayItems.length} 项 · 查看全天 <Icon name="arrow" size={14} /></button></div><Timeline items={dayItems} onSelect={setActivity} visuals={plan.visuals} /></section>
+        {!journey?.planCurrent ? <div className={styles.inset}><Icon name="tune" /><p>偏好已更新，当前保留上次保存的行程。可前往“节奏”重新规划。</p></div> : null}
+        <details className={styles.journeyNotes}><summary>更多 · 旅程说明、版本与来源</summary><div className={styles.stack}><div className={styles.actions}><button className={styles.textButton} onClick={() => void showVersions()}>版本历史</button><button className={styles.textButton} onClick={() => void recoverPlanning()}>查看后台任务</button></div>{journey ? <JourneyVisualButton key={journey.id} journey={journey} onSaved={replaceJourney} /> : null}<h3>{plan.plan.headline}</h3><p>{plan.plan.summary}</p><p>{plan.plan.reason}</p>{plan.manualAdjustment ? <small>已手动调整 · {dateLabel(plan.manualAdjustment.updatedAt, true)}</small> : null}<ProvenanceBlock provenance={plan.provenance} /></div></details>
+        {journey?.status === "planned" ? <button className={styles.primaryButton} disabled={busy} onClick={() => void transition("active")}>开始这段旅程 <Icon name="arrow" /></button> : null}
+        {journey?.status === "active" ? <div className={styles.actions}><button className={styles.textButton} onClick={() => setFeedbackOpen(true)}><Icon name="edit" size={16} />记录感受</button><button className={styles.textButton} disabled={busy} onClick={() => void transition("completed")}>完成旅程 <Icon name="check" size={16} /></button></div> : null}
+      </> : <><section className={styles.card}><h2>把想去的地方，变成自己的行程。</h2><p>点选目的地和日期，留好预约，再安排探索与休息。</p><button className={styles.primaryButton} onClick={() => void newJourney()}><Icon name="plus" />创建我的旅程</button></section>{journeys.length ? <section className={styles.card}><div className={styles.sectionHead}><h3>继续你的旅程</h3><button className={styles.textButton} onClick={() => setPickerOpen(true)}>全部旅程 ↗</button></div><div className={styles.journeyList}>{journeys.slice(0, 3).map((entry) => <div className={styles.journeyRow} key={entry.id}><JourneyCover compact images={entry.plan?.visuals?.cover} fallback={coverForDestination().thumbnail} alt={entry.title} /><button disabled={busy} onClick={() => void selectJourney(entry.id)}><strong>{entry.title}</strong><small>{STATUS_LABELS[entry.status]} · {dateLabel(entry.updatedAt)}</small></button><Icon name="arrow" size={16} /></div>)}</div></section> : null}</>}
     </div>;
   }
 
-  function renderWizard() {
+  function renderWizard() { return <CreateJourneyView step={step} plan={plan} loading={loading} setStep={setStep} setError={setError} setCityPicker={setCityPicker} form={form} setForm={setForm} setConsent={setConsent} today={today} intention={intention} setIntention={setIntention} fatigue={fatigue} setFatigue={setFatigue} busy={busy} update={update} reservationRange={reservationRange} scheduleOpen={scheduleOpen} setScheduleOpen={setScheduleOpen} stress={stress} bodyFeedback={bodyFeedback} ambient={ambient} setAmbient={setAmbient} setStress={setStress} setBodyFeedback={setBodyFeedback} healthStatus={healthStatus} whoopConnected={whoopConnected} health={health} healthLoading={healthLoading} healthError={healthError} includeWhoop={includeWhoop} setIncludeWhoop={setIncludeWhoop} whoopConfigured={whoopConfigured} memoryText={memoryText} includeMemory={includeMemory} setIncludeMemory={setIncludeMemory} serviceReady={serviceReady} journey={journey} setDayDetail={setDayDetail} setActivity={setActivity} openPlanEditor={openPlanEditor} setShareOpen={setShareOpen} planner={planner} transition={transition} navigate={navigate} renderConsent={renderConsent} />; }
+
+  function renderAdjust() { return <>{journey?.plan ? <AdjustmentView key={journey.id} journey={journey} request={jsonRequest} onSaved={(value) => { replaceJourney(value); fillDraft(value.draft); clearPendingReservations(value.id); }} onBreathing={() => void navigate("breathing")} onVersions={() => void showVersions()} whoopConnected={whoopConnected} /> : null}<details className={styles.journeyNotes} open={!journey?.plan}><summary>{journey?.plan ? "更多 · 身体记录与整段重新规划" : "开始一段旅程"}</summary><BodyRhythmView plan={plan} renderMetrics={renderMetrics} renderWhoopStatus={renderWhoopStatus} navigate={navigate} newJourney={newJourney} feedbackHistory={feedbackHistory} journey={journey} intention={intention} setIntention={setIntention} form={form} reservationRange={reservationRange} loading={loading} busy={busy} update={update} setError={setError} fatigue={fatigue} setFatigue={setFatigue} setConsent={setConsent} stress={stress} setStress={setStress} bodyFeedback={bodyFeedback} setBodyFeedback={setBodyFeedback} moodFeedback={moodFeedback} setMoodFeedback={setMoodFeedback} ambient={ambient} setAmbient={setAmbient} whoopConnected={whoopConnected} includeWhoop={includeWhoop} setIncludeWhoop={setIncludeWhoop} readyToPlan={readyToPlan} openPlanningConsent={openPlanningConsent} previousPlan={previousPlan} fillDraft={fillDraft} /></details></>; }
+
+  function renderExplore() {
+    const products = discoverySource === "fliggy";
     return <div className={styles.stack}>
-      <div className={styles.wizardProgress}><Badge tone={step === 2 ? "mint" : "muted"}>● 第 {step + 1} / 4 步 · {STEP_LABELS[step]}</Badge>{[0, 1, 2, 3].map((index) => <button key={index} className={index <= step ? styles.active : ""} aria-label={`前往第 ${index + 1} 步，${STEP_LABELS[index]}`} disabled={index > step || (index === 3 && !plan) || loading} onClick={() => { setStep(index); setError(""); }} />)}</div>
-      {step === 0 ? <><div className={styles.pageIntro}><h1>这趟旅程，<br />最想照顾什么？</h1><p>从旅行的初衷开始。活动密度、休息和当地体验，都会跟随你选择的节奏。</p></div><Ambience image="forest" label="身心与旅程，自然相连" title="把时间留给重要的感受。" /><div className={`${styles.stack} ${styles.intentGrid}`}>{INTENTS.map((item) => <button key={item.value} className={`${styles.intentCard} ${intention === item.value ? styles.selected : ""}`} aria-pressed={intention === item.value} onClick={() => { setIntention(item.value); setConsent(false); }}><div className={styles.intentHeader}><Icon name={item.icon} /><div><strong>{item.name}</strong><small>{item.subtitle}</small></div><span className={styles.radio}>{intention === item.value ? <Icon name="check" size={13} /> : null}</span></div><p>{item.detail}</p><div className={styles.chipRow}>{item.tags.map((tag) => <Badge key={tag} tone="muted">{tag}</Badge>)}</div></button>)}</div><section className={styles.card}><div className={styles.sectionHead}><span><Icon name="pulse" /><strong>现在的身体感受</strong></span><small>主观自评</small></div><p className={styles.note}>可以留空。未来出发时的身体状态，抵达后仍可更新。</p><div className={styles.scaleOptions}>{[["1", "轻松有活力", "疲劳较轻"], ["3", "想稍微放慢", "适量休息"], ["5", "需要好好休息", "疲劳明显"]].map(([value, name, note]) => <button key={value} className={fatigue === value ? styles.selected : ""} aria-pressed={fatigue === value} onClick={() => setFatigue(fatigue === value ? "" : value)}><i className={styles.statusDot} />{name}<small>{note}</small></button>)}</div></section><div className={styles.inset}><Icon name="leaf" /><p>没有标准答案。你可以在旅途中的每个阶段，重新告诉我什么让你舒服。</p></div></> : null}
-      {step === 1 ? <>
-        <div className={styles.pageIntro}><h1>去哪里，<br />待多久？</h1><p>选好地点和日期就行，时区会跟着目的地自动走。</p></div>
-        <div className={styles.wideGrid}>
-          <section className={styles.card}>
-            <div className={styles.sectionHead}><span><Icon name="compass" /><strong>想去哪里</strong></span><Badge tone="mint">点选即可</Badge></div>
-            <PlacePicker label="出发地" value={form.originCity} placeholder="你从哪里出发" suggestions={learnedOrigins} exclude={form.destinationCity} onSelect={(place) => { updateCity("originCity", place.city, place.timezone); setConsent(false); }} />
-            <PlacePicker label="目的地" value={form.destinationCity} placeholder="想去哪里" suggestions={learnedDefaults?.destinations} exclude={form.originCity} onSelect={(place) => { updateCity("destinationCity", place.city, place.timezone); setConsent(false); }} />
-            <div className={styles.inset}><Icon name="sun" /><p>{form.originCity && form.destinationCity ? `${form.originCity} → ${form.destinationCity}，时区已自动匹配，出发前可以再核对。` : "选好两个地点后会自动带上时区，你不用手动设置。"}</p></div>
-            <Ambience image="retreat" label="目的地由你决定" title={form.destinationCity ? `${form.destinationCity}，慢慢相遇。` : "寻找你的下一个安静角落。"} />
-          </section>
-          <section className={styles.card}>
-            <div className={styles.sectionHead}><span><Icon name="calendar" /><strong>旅行日期</strong></span><Badge tone="mint">只要日期</Badge></div>
-            <DateRangePicker start={form.departureDate} end={form.returnDate} today={today} onChange={(next) => { update("departureDate", next.start); update("returnDate", next.end); setConsent(false); }} />
-            <div className={styles.inset}><Icon name="clock" /><p>你只需要选日期。具体时刻由 BioTrip 按常见行程估算，并会在行程里标明，之后随时可以调整。</p></div>
-          </section>
-        </div>
-      </> : null}{step === 2 ? <>
-        <div className={styles.pageIntro}><h1>调一调，<br />让旅程更合身。</h1><p>选一个每天想走多少的距离，连接身体记录，剩下的交给 BioTrip。</p></div>
-        <div className={styles.wideGrid}>
-          <div className={styles.stack}>
-            <PaceMatrix value={form.paceLevel} disabled={loading || busy} onChange={(level) => { update("paceLevel", level); setConsent(false); }} />
-            <section className={styles.card}>
-              <div className={styles.sectionHead}><span><Icon name="tune" /><strong>安排方式</strong></span><Badge tone="muted">时间块密度</Badge></div>
-              <div className={styles.segmented}><button className={form.planningStyle === "structured" ? styles.active : ""} onClick={() => { update("planningStyle", "structured"); setConsent(false); }}>有序清晰</button><button className={form.planningStyle === "flexible" ? styles.active : ""} onClick={() => { update("planningStyle", "flexible"); setConsent(false); }}>留白探索</button></div>
-              <div className={styles.inset}><Icon name="leaf" /><p>{form.planningStyle === "structured" ? "时间块与衔接更清楚，让预约和交通有明确安排。" : "把活动安排得宽松一些，保留临场探索和休息的空间。"} 已有的固定安排会纳入规划。</p></div>
-              <label className={styles.field}>已确定的活动或预约<textarea maxLength={6000} rows={4} value={form.itineraryText} onChange={(event) => update("itineraryText", event.target.value)} placeholder={"09:00 | 美术馆预约 | 固定\n14:00 | 午餐 | 灵活"} /><small>每行：HH:mm | 活动名称 | 固定 / 灵活</small></label>
-              <div className={styles.sectionHead}><strong>舒服的空间</strong><small>可多选</small></div>
-              <div className={styles.chipRow}>{AMBIENCE.map((item) => <button className={`${styles.chip} ${ambient.includes(item) ? styles.active : ""}`} key={item} aria-pressed={ambient.includes(item)} onClick={() => setAmbient(toggle(ambient, item))}>{item}</button>)}</div>
-              <div className={styles.twoColumns}><label className={styles.field}>疲劳自评<select value={fatigue} onChange={(event) => setFatigue(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5{value === 1 ? " · 很轻" : value === 5 ? " · 明显" : ""}</option>)}</select></label><label className={styles.field}>压力自评<select value={stress} onChange={(event) => setStress(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5{value === 1 ? " · 很低" : value === 5 ? " · 很高" : ""}</option>)}</select></label></div>
-            </section>
-          </div>
-          <div className={styles.stack}>
-            <GuardrailToggles value={form.guardrails} disabled={loading || busy} onChange={(next) => { update("guardrails", next); setConsent(false); }} />
-            <section className={styles.card}>
-              <div className={styles.sectionHead}><span><Icon name="pulse" /><strong>连接身体节奏</strong></span><Badge tone={whoopConnected ? "mint" : "muted"}>{whoopConnected ? "已连接" : "可选"}</Badge></div>
-              <div className={styles.inset}><Icon name="pulse" /><div><strong>WHOOP</strong><p>{whoopConnected ? health ? `最近记录：恢复 ${number(health.recoveryScore)}% · 睡眠 ${sleepDuration(health.sleepMinutes)}` : "已连接，暂无最近同步的完整记录。" : "连接后可结合近期恢复、睡眠与活动记录。"}</p></div></div>
-              {whoopConnected ? <label className={styles.checkLabel}><input type="checkbox" checked={includeWhoop} onChange={(event) => { setIncludeWhoop(event.target.checked); setConsent(false); }} /><span>本次规划使用 WHOOP 近期记录</span></label> : whoopConfigured ? <a className={styles.secondaryButton} href="/api/whoop/connect">连接 WHOOP ↗</a> : <p className={styles.note}>目前可使用主观自评与旅行偏好继续规划。</p>}
-              <p className={styles.note}>未来旅程的身体状态仍会变化，抵达后可以重新规划。</p>
-              {memoryText ? <label className={styles.checkLabel}><input type="checkbox" checked={includeMemory} onChange={(event) => { setIncludeMemory(event.target.checked); setConsent(false); }} /><span>使用我的旅行偏好与旅程记忆</span></label> : null}
-            </section>
-            <section className={styles.card}>
-              <div className={styles.sectionHead}><span><Icon name="compass" /><strong>当地旅行服务</strong></span><Badge tone="mint">真实检索</Badge></div>
-              <div className={styles.serviceGrid}>{SERVICES.map(([value, label]) => <label className={styles.serviceOption} key={value}><input type="checkbox" checked={form.requestedServices.includes(value)} onChange={() => update("requestedServices", toggle(form.requestedServices, value))} />{label}</label>)}</div>
-              <label className={styles.field}>饮食喜好或限制<input maxLength={500} value={form.foodPreferences} onChange={(event) => update("foodPreferences", event.target.value)} placeholder="例如：素食、少辣、对花生过敏" /></label>
-            </section>
-            <Ambience image="sleep" label="给恢复留出空间" title="享受探索，也享受休息。" />
-          </div>
-        </div>
-        <section className={styles.card}>
-          <div className={styles.sectionHead}><span><Icon name="shield" /><strong>本次资料确认</strong></span><Badge tone="green">由你决定</Badge></div>
-          {renderConsent()}
-        </section>
-        {serviceReady === false ? <div className={styles.inset}><Icon name="clock" /><p>规划服务暂时未就绪。可先保存草稿；恢复后再生成。</p></div> : null}
-      </> : null}{step === 3 ? plan ? (
-        <DayReview
-          plan={plan}
-          startDate={form.departureDate || "行程"}
-          destination={form.destinationCity}
-          travelHours={plan.timezone.travelHours}
-          busy={loading || busy}
-          onEditPace={() => { setStep(2); setError(""); }}
-          onLaunch={() => { setConsent(false); setConsentOpen(true); }}
-        />
-      ) : (
-        <div className={styles.stack}>
-          <div className={styles.pageIntro}><h1>还差一点点。</h1><p>先补全目的地与日期，然后确认本次使用的资料，就能生成行程。</p></div>
-          <button className={styles.primaryButton} onClick={() => setStep(1)}><Icon name="arrow" />回到上一步补全</button>
-        </div>
-      ) : null}
+      <div className={styles.pageIntro}><span className={styles.eyebrow}><Icon name="leaf" size={15} />发现目的地</span><h1>发现目的地</h1><p>{plan ? `查看${journey?.draft.trip?.destinationCity}的飞猪商品，或阅读当地参考资料。` : "创建旅程后，会在这里保留检索到的商品与当地资料。"}</p></div>
+      <div className={styles.filterRow} role="group" aria-label="发现内容来源">
+        <button className={`${styles.chip} ${products ? styles.active : ""}`} aria-pressed={products} onClick={() => { setDiscoverySource("fliggy"); setFilter("全部"); }}>飞猪商品</button>
+        <button className={`${styles.chip} ${!products ? styles.active : ""}`} aria-pressed={!products} onClick={() => { setDiscoverySource("local"); setFilter("全部"); }}>当地资料</button>
+      </div>
+      <p className={styles.note}>{products ? "来自本次飞猪搜索的商品。图片、价格与可订状态以对应商品页为准。" : "来自旅游局、交通机构等网站的参考资讯，可能是专题或目录，不代表可预订商品。"}</p>
+      <div className={styles.filterRow}>{["全部", "餐食茶饮", "休息放松", "旅行交通"].map((item) => <button key={item} className={`${styles.chip} ${filter === item ? styles.active : ""}`} onClick={() => setFilter(item)}><Icon name={item === "全部" ? "compass" : item === "餐食茶饮" ? "cup" : item === "休息放松" ? "leaf" : "train"} size={14} />{item}</button>)}</div>
+      {filteredPlaces.length ? <div className={styles.placeGrid}>{filteredPlaces.map((entry) => <article className={styles.placeCard} key={`${entry.name}-${entry.url}`}>
+        {products ? <button className={styles.placeCover} style={{ border: 0, cursor: "pointer" }} onClick={() => setPlace(entry)} aria-label={`查看${entry.name}`}><EditorialImage imageUrl={entry.imageUrl} product subject={entry.category + " " + entry.name} compact /></button> : null}
+        <button type="button" className={styles.placeCopyButton} aria-label={`查看${entry.name}介绍`} onClick={() => setPlace(entry)}><small className={styles.placeDetailMeta}>{entry.category}{entry.sourceKind === "topic_reference" ? " · 专题参考" : entry.sourceKind === "place_reference" ? " · 地点资料" : !products ? " · 参考资料" : ""} · 来源：{entry.source}{products && plan?.retrievedAt ? ` · 检索于 ${dateLabel(plan.retrievedAt, true)}` : ""}</small><h3>{entry.name}</h3><p>{entry.reason}</p></button>
+        <button className={styles.primaryButton} onClick={() => setPlace(entry)}><Icon name="compass" size={16} />{products ? "查看商品详情与飞猪来源" : "查看资料详情与原文"}</button>
+      </article>)}</div> : <section className={`${styles.card} ${styles.empty}`}><Icon name="compass" /><h2>{!plan ? "你的目的地，等你来选。" : sourcePlaces.length ? "这个分类暂时没有结果。" : products ? (plan?.provenance?.flyai?.sourceCount ? "已检索商品，本次没有选入推荐。" : plan?.provenance?.stages?.some(stage => stage.stage === "flyai_inventory" && stage.status === "degraded") ? "本次商品检索未完成。" : "这份行程没有保存商品推荐记录。") : "本次旅程没有当地参考资料。"}</h2><p>{!plan ? "创建旅程后可查看真实检索结果。" : sourcePlaces.length ? "试试全部分类。" : products ? "当地资讯不会作为飞猪商品展示。可在行程的检索记录中查看商品检索情况，或打开当地资料。" : "这里仅展示有来源的当地资讯。"}</p><button className={styles.primaryButton} onClick={() => { if (!plan) newJourney(); else { if (!sourcePlaces.length) setDiscoverySource(products ? "local" : "fliggy"); setFilter("全部"); } }}>{!plan ? "创建旅程" : sourcePlaces.length ? "查看全部分类" : products ? "查看当地资料" : "查看飞猪商品"}</button></section>}
+      <div className={styles.inset}><Icon name="shield" /><div><strong>{products ? "打开飞猪，自己决定" : "参考资讯，核对原文"}</strong><p>{products ? "商品价格、服务内容和可订状态，以飞猪商品页为准。BioTrip 不会代你下单或支付。" : "资料可能介绍多个地点。计划前请在原文核对具体地址、营业时间与适用条件。"}</p></div></div>
     </div>;
   }
-
-  function renderAdjust() {
-    if (!plan) return <div className={`${styles.card} ${styles.empty}`}><Icon name="tune" /><h2>从一段真实的旅程开始。</h2><p>生成行程后，随时根据自己的感受调整当天的安排。</p><button className={styles.primaryButton} onClick={newJourney}>创建旅程 <Icon name="arrow" /></button></div>;
-    return <div className={styles.stack}><div className={styles.pageIntro}><span className={styles.eyebrow}><Icon name="tune" size={16} />跟随当下的身体节奏</span><h1>让行程，舒服一点。</h1><p>告诉我现在的感觉。固定安排会一起纳入规划，新的行程生成后会保存到这段旅程。</p></div><div className={styles.successBanner}><Icon name="leaf" /><div><strong>{journey?.status === "completed" ? "这段旅程已完成" : "保留重要安排，重新整理节奏"}</strong><p>{plan.plan.itinerary.filter((item) => item.fixed).length} 个固定安排 · {plan.plan.itinerary.filter((item) => !item.fixed).length} 个灵活节点</p></div></div><div className={styles.wideGrid}><section className={styles.card}><div className={styles.sectionHead}><h3>现在想怎样安排？</h3><Badge tone="mint">主观自评</Badge></div><div className={styles.segmented}><button className={intention === "安静恢复" ? styles.active : ""} onClick={() => setIntention("安静恢复")}><Icon name="leaf" size={16} />慢下来</button><button className={intention === "慢慢探索" ? styles.active : ""} onClick={() => setIntention("慢慢探索")}><Icon name="compass" size={16} />继续探索</button></div><div className={styles.twoColumns}><label className={styles.field}>身体疲劳<select value={fatigue} onChange={(event) => setFatigue(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5{value === 5 ? " · 很明显" : value === 1 ? " · 很轻" : ""}</option>)}</select></label><label className={styles.field}>主观压力<select value={stress} onChange={(event) => setStress(event.target.value)}><option value="">未填写</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5</option>)}</select></label></div><label className={styles.field}>身体感受<textarea maxLength={80} rows={3} value={bodyFeedback} onChange={(event) => setBodyFeedback(event.target.value)} placeholder="例如：走得有些久，想找一个坐下来喝茶的地方" /></label><label className={styles.field}>心情与兴趣<textarea maxLength={80} rows={2} value={moodFeedback} onChange={(event) => setMoodFeedback(event.target.value)} placeholder="例如：希望下午去安静的展馆" /></label><div className={styles.chipRow}>{AMBIENCE.map((item) => <button className={`${styles.chip} ${ambient.includes(item) ? styles.active : ""}`} key={item} aria-pressed={ambient.includes(item)} onClick={() => setAmbient(toggle(ambient, item))}>{item}</button>)}</div>{whoopConnected ? <label className={styles.checkLabel}><input type="checkbox" checked={includeWhoop} onChange={(event) => setIncludeWhoop(event.target.checked)} /><span>本次重新读取 WHOOP 近期身体记录</span></label> : null}<button className={styles.primaryButton} disabled={loading || journey?.status === "completed" || !readyToPlan} onClick={() => { setConsent(false); setConsentOpen(true); }}><Icon name="sync" />重新规划并保存</button></section><div className={styles.stack}><section className={styles.card}><div className={styles.sectionHead}><h3>当前安排的调整说明</h3><Badge tone="muted">{plan.plan.adjustments.length} 条</Badge></div>{plan.plan.adjustments.length ? plan.plan.adjustments.map((detail, index) => <div className={styles.diff} key={index}><span className={styles.eyebrow}><Icon name="check" size={15} />安排 {index + 1}</span><p>{detail}</p></div>) : <p>{plan.plan.reason}</p>}</section>{previousPlan ? <section className={styles.card}><h3>上一次与当前版本</h3><div className={styles.twoColumns}><div className={styles.inset}><div><small>上一次 · {previousPlan.plan.itinerary.length} 个节点</small><strong>{previousPlan.plan.headline}</strong></div></div><div className={styles.inset}><div><small>当前 · {plan.plan.itinerary.length} 个节点</small><strong>{plan.plan.headline}</strong></div></div></div><p className={styles.note}>生成成功后使用当前版本。固定活动与供应商订单仍需以原始预约为准。</p></section> : null}<Ambience image="tea" label="不赶路，也能抵达" title="留一个停顿，重新找回节奏。" /><div className={styles.breathingPrompt}><div><span className={styles.iconTile}><Icon name="wind" /></span><div><strong>先休息 3 分钟</strong><small>跟随呼吸，给自己一点空间</small></div></div><button onClick={() => navigate("breathing")}>开始</button></div></div></div><button className={styles.textButton} onClick={() => { if (journey) fillDraft(journey.draft); navigate("today"); }}><Icon name="back" size={16} />保留当前行程并返回今日</button></div>;
-  }
-
-  function renderExplore() { return <div className={styles.stack}><div className={styles.pageIntro}><span className={styles.eyebrow}><Icon name="leaf" size={15} />真实的当地体验</span><h1>寻找下一处，<br />舒服的停靠点。</h1><p>{plan ? `从${journey?.draft.trip?.destinationCity}的真实检索结果里，看看适合你的餐食、休息和当地服务。` : "先告诉我目的地，我会为你的行程寻找有来源的真实体验。"}</p></div><div className={styles.filterRow}>{["全部", "餐食茶饮", "休息放松", "旅行交通"].map((item) => <button key={item} className={`${styles.chip} ${filter === item ? styles.active : ""}`} onClick={() => setFilter(item)}><Icon name={item === "全部" ? "compass" : item === "餐食茶饮" ? "cup" : item === "休息放松" ? "leaf" : "train"} size={14} />{item}</button>)}</div>{filteredPlaces.length ? <div className={styles.placeGrid}>{filteredPlaces.map((entry) => <article className={styles.placeCard} key={`${entry.name}-${entry.url}`}><button className={styles.placeCover} style={{ border: 0, cursor: "pointer" }} onClick={() => setPlace(entry)} aria-label={`查看${entry.name}`}><Badge tone="green"><Icon name="shield" size={12} />有来源的旅行信息</Badge><Icon name={activityIcon(entry.name + entry.category)} /><small>{entry.category} · 来源：{entry.source}</small></button><div><h3>{entry.name}</h3><p>{entry.reason}</p></div><button className={styles.primaryButton} onClick={() => setPlace(entry)}><Icon name="compass" size={16} />查看详情与预订来源</button></article>)}</div> : <section className={`${styles.card} ${styles.empty}`}><Icon name="compass" /><h2>{plan ? "这个分类暂时没有结果。" : "你的目的地，等你来选。"}</h2><p>{plan ? "试试全部结果，或回到调整页修改想检索的服务。" : "创建旅程后，会在这里展示来自真实检索的地点与商品链接。"}</p><button className={styles.primaryButton} onClick={() => plan ? setFilter("全部") : newJourney()}>{plan ? "查看全部结果" : "创建旅程"}</button></section>}<div className={styles.inset}><Icon name="shield" /><div><strong>真实来源，自己决定</strong><p>商品价格、营业时间和可订状态，以打开后的供应商页面为准。BioTrip 不会代你下单或支付。</p></div></div></div>; }
-  function renderSleep() { return <div className={styles.stack}><div className={styles.eyebrow}><Icon name="moon" size={16} />睡眠与目的地时区</div><div className={styles.wideGrid}><section className={`${styles.card} ${styles.hero}`}><div className={styles.sectionHead}><span><Icon name="pin" /><strong>{journey?.draft.trip?.destinationCity || "当前旅行节奏"}</strong></span><Badge tone="mint">{plan ? "时区已核对" : "等待旅行信息"}</Badge></div><div className={styles.sleepGauge}><div><strong>{plan ? `${plan.timezone.shiftMinutes > 0 ? "+" : ""}${number(plan.timezone.shiftMinutes / 60, 1)} 小时` : "—"}</strong><small>相对出发地的时区变化</small></div></div><div className={styles.inset}><Icon name="sun" /><p>{plan ? `旅行时间约 ${number(plan.timezone.travelHours, 1)} 小时。抵达后留意当地光照与自己实际的睡意，按目的地时间逐步安排作息。` : "选择目的地并生成行程后，可查看两地时区变化。"}</p></div><p className={styles.note}>身体适应程度与睡眠窗口尚无测量依据，页面只显示已同步的真实记录。</p></section><section className={styles.card}><div className={styles.sectionHead}><h3>最近睡眠记录</h3><Badge tone="green">WHOOP</Badge></div><div><small className={styles.mutedText}>总睡眠时长</small><h1>{sleepDuration(health?.sleepMinutes)}</h1></div><div className={styles.metrics}><div className={styles.metric}><span><Icon name="moon" size={14} />睡眠表现</span><strong>{number(health?.sleepPerformance)}<small>%</small></strong><small>设备记录</small></div><div className={styles.metric}><span><Icon name="heart" size={14} />静息心率</span><strong>{number(health?.restingHeartRate)}</strong><small>次 / 分</small></div><div className={styles.metric}><span><Icon name="pulse" size={14} />心率变异</span><strong>{number(health?.hrvRmssdMilli, 1)}</strong><small>毫秒</small></div></div><p className={styles.note}>测量时间：{dateLabel(health?.measuredAt, true)}。这是最近的记录，未在旅途中持续测量。</p>{whoopConnected ? <button className={styles.secondaryButton} disabled={busy} onClick={() => void syncHealth()}><Icon name="sync" />同步最新记录</button> : whoopConfigured ? <a className={styles.primaryButton} href="/api/whoop/connect">连接 WHOOP</a> : null}</section></div>{plan ? <section className={styles.card}><div className={styles.sectionHead}><h3>行程里的休息节点</h3><small>来源：当前计划</small></div>{plan.plan.itinerary.filter((item) => /休息|睡|午休|住宿|酒店|放松|茶|咖啡/.test(item.name + item.detail)).slice(0, 5).map((item, index) => <div className={styles.summaryRow} key={index}><span>{item.time}</span><strong>{item.name}</strong></div>)}<p className={styles.note}>想更早休息，可以在调整页告诉我；已确定的预约仍会纳入新规划。</p></section> : null}<Ambience image="sleep" label="夜晚也是旅程的一部分" title="把一天温柔地收好。" />{plan && journey?.status !== "completed" ? <button className={styles.primaryButton} onClick={() => { setBodyFeedback("希望晚上早点回到住宿休息，保留固定预约，减少夜间活动。"); startAdjustment(); }}><Icon name="moon" />调整行程，早点休息</button> : null}</div>; }
-  function renderFatigue() { return <div className={styles.stack}><div className={styles.dangerBanner}><Icon name="heart" size={14} />身体感受由你告诉我 · 不是自动健康诊断</div><section className={styles.card}><span className={styles.eyebrow}>给旅程留一个停顿</span><div className={styles.sectionHead}><h1>累了，<br />就慢一点。</h1><Badge tone="rose"><Icon name="leaf" /></Badge></div><p>可以减少步行、安排坐下来休息的地方，或者提前结束今天的探索。你的固定安排会一起纳入重新规划。</p><div className={styles.metrics}><div className={styles.metric}><span>心率变异</span><strong>{number(health?.hrvRmssdMilli, 1)}</strong><small>毫秒 · 最近记录</small></div><div className={styles.metric}><span>活动负荷</span><strong>{number(health?.cycleStrain, 1)}</strong><small>WHOOP 周期记录</small></div><div className={styles.metric}><span>恢复指数</span><strong>{number(health?.recoveryScore)}<small>%</small></strong><small>最近记录</small></div></div><p className={styles.note}>这些历史记录不能证明此刻疲劳；新安排以你本次填写的感受为依据。</p></section><section className={styles.card}><div className={styles.sectionHead}><span><Icon name="leaf" /><h3>更从容的下一步</h3></span><Badge tone="mint">由你选择</Badge></div><Ambience image="tea" label="一处可以坐下来的安静角落" title="喝口水，休息一下。" /><div className={styles.inset}><Icon name="train" /><div><strong>减少走路，增加衔接空间</strong><p>告诉我你想放慢，我会检索适合的当地交通和休息体验，再生成完整的新安排。</p></div></div><button className={styles.primaryButton} onClick={() => startAdjustment(true)}>调整为轻松节奏 <Icon name="arrow" /></button><button className={styles.secondaryButton} onClick={() => navigate("breathing")}><Icon name="wind" />先做 3 分钟呼吸练习</button></section><button className={styles.textButton} onClick={() => navigate("today")}>保留当前行程并返回</button></div>; }
+  function renderSleep() { return <SleepView journey={journey} plan={plan} health={health} whoopDisplay={whoopDisplay} renderWhoopStatus={renderWhoopStatus} whoopConnected={whoopConnected} busy={busy} healthLoading={healthLoading} syncHealth={syncHealth} whoopConfigured={whoopConfigured} setActivity={setActivity} setBodyFeedback={setBodyFeedback} startAdjustment={startAdjustment} />; }
+  function renderFatigue() { return <RestView health={health} startAdjustment={startAdjustment} navigate={navigate} navigateBack={navigateBack} />; }
 
   if (!authReady) return <main className={styles.app}><div className={styles.loading}><div className={styles.spinner} /><strong>正在打开你的 BioTrip…</strong></div></main>;
   if (initError) return <main className={styles.app}><div className={styles.loading}><h2>暂时无法打开账户</h2><p role="alert">{initError}</p><button className={styles.primaryButton} onClick={() => window.location.reload()}>重新加载</button></div></main>;
   const detailView = ["breathing", "sleep", "fatigue"].includes(view);
   const headerDestination = journey?.draft.trip?.destinationCity;
-  return <main className={styles.app}>
-    <header className={styles.header}><div className={styles.headerInner}>{view === "create" ? <><button className={styles.iconButton} aria-label={step > 0 ? "上一步" : "返回今日"} disabled={loading || busy} onClick={() => step > 0 ? setStep(step - 1) : navigate("today")}><Icon name="back" /></button><div className={styles.wizardHead}><Badge tone="muted">● 第 {step + 1} 步 · {STEP_LABELS[step]}</Badge></div><div className={styles.headerActions}><a className={styles.avatar} href="/profile" aria-label="我的档案"><Icon name="person" size={17} /></a><button className={styles.iconButton} disabled={loading} aria-label="关闭旅程创建" onClick={() => navigate("today")}><Icon name="close" /></button></div></> : <><div className={styles.headerTitle}><div>{detailView ? <button className={styles.iconButton} aria-label="返回今日" onClick={() => navigate("today")}><Icon name="back" /></button> : <Icon name="pin" size={15} />}<button style={{ border: 0, background: "transparent", padding: 0, textAlign: "left" }} onClick={() => setPickerOpen(true)} aria-label="选择或管理旅程"><strong>{detailView ? VIEW_LABELS[view] : headerDestination ? `${headerDestination} · ${journey ? STATUS_LABELS[journey.status] : "我的旅程"}` : "BioTrip"}</strong></button></div><small>{detailView ? "跟随自己的节奏" : VIEW_LABELS[view]}</small></div><div className={styles.headerActions}>{whoopConnected ? <Badge tone="mint"><span className={styles.statusDot} /><Icon name="sync" size={12} />已连接</Badge> : <Badge tone="muted">我的旅程</Badge>}<a className={styles.avatar} href="/profile" aria-label="我的档案"><Icon name="person" size={17} /></a></div></>}</div></header>
+  return <><div hidden={view === "profile"}><main className={styles.app}>
+    <header className={styles.header}><div className={styles.headerInner}>{view === "create" ? <><button className={styles.iconButton} aria-label={step > 0 ? "上一步" : "返回上一层"} disabled={loading || busy} onClick={() => { if (step > 0) { setStep(step - 1); resetScroll(); } else void navigateBack(); }}><Icon name="back" /></button><div className={styles.wizardHead}><Badge tone="muted">● 第 {Math.min(step, 2) + 1} 步 · {STEP_LABELS[step]}</Badge></div><div className={styles.headerActions}><button type="button" className={styles.avatar} aria-label="我的档案" disabled={busy} onClick={() => void openProfile()}><Icon name="person" size={17} /></button><button className={styles.iconButton} disabled={loading || busy} aria-label="关闭旅程创建" onClick={() => void navigateBack()}><Icon name="close" /></button></div></> : <><div className={styles.headerTitle}><div>{detailView ? <button className={styles.iconButton} aria-label="返回上一层" disabled={busy} onClick={() => void navigateBack()}><Icon name="back" /></button> : <Icon name="pin" size={15} />}<button style={{ border: 0, background: "transparent", padding: 0, textAlign: "left" }} disabled={busy} onClick={() => setPickerOpen(true)} aria-label="选择或管理旅程"><strong>{detailView ? VIEW_LABELS[view] : headerDestination ? `${headerDestination} · ${journey ? STATUS_LABELS[journey.status] : "我的旅程"}` : "BioTrip"}</strong></button></div><small>{detailView ? "跟随自己的节奏" : VIEW_LABELS[view]}</small></div><div className={styles.headerActions}>{view === "adjust" ? <Badge tone={whoopDisplay.status === "synced" ? "mint" : "muted"}>WHOOP · {healthStatus}</Badge> : null}<button type="button" className={styles.avatar} aria-label="我的档案" disabled={busy} onClick={() => void openProfile()}><Icon name="person" size={17} /></button></div></>}</div></header>
     <div className={`${styles.content} ${view === "create" ? styles.wizardContent : ""}`}>
       {error ? <div className={styles.error} role="alert" style={{ margin: "16px 0" }}><span>{error}</span><button className={styles.iconButton} aria-label="关闭错误提示" onClick={() => setError("")}><Icon name="close" size={16} /></button></div> : null}
-      {loading ? <section className={styles.loading} aria-live="polite"><div className={styles.spinner} /><h2>正在整理你的旅程</h2><p>{progressMessage}</p><div className={styles.loadingSteps}>{[["preparing", "准备旅行资料"], ["health_insight", "结合身体感受与偏好"], ["local_research", "检索真实目的地信息"], ["flyai_inventory", "核验飞猪实时商品"], ["compose_plan", "编排中文行程"], ["complete", "保存到你的旅程"]].map(([stage, label], index) => <div className={progressStage === stage ? styles.active : ""} key={stage}><span>{index + 1}</span>{label}</div>)}</div><p className={styles.note}>完成后会保存到你的账户。等候期间可以停止，你的原行程仍会保留。</p><button className={styles.secondaryButton} style={{ maxWidth: 300 }} onClick={() => generation.current?.abort()}>停止本次生成</button></section> : view === "today" ? renderToday() : view === "create" ? renderWizard() : view === "adjust" ? renderAdjust() : view === "explore" ? renderExplore() : view === "sleep" ? renderSleep() : view === "fatigue" ? renderFatigue() : <BreathingOverlay open={view === "breathing"}>
-          <BreathingSession restingHeartRate={health?.restingHeartRate} onComplete={(completed) => { navigate("today"); if (completed && journey && ["active", "completed"].includes(journey.status)) void sendFeedback("完成了一次 3 分钟舒缓呼吸练习。", true); else setToast(completed ? "3 分钟练习已完成，回到自己的节奏。" : "练习已结束，随时可以再开始。"); }} />
-        </BreathingOverlay>}
+
+      {progressOpen && !activeJob && loading ? <section className={styles.loading}><div className={styles.spinner} /><h2>正在提交后台任务</h2><p role="status">草稿与本次资料确认后，会显示进度和当地推荐。</p></section> : null}
+      {activeJob ? <div hidden={!progressOpen}><PlanningProgress ready={planningReady} onReady={() => void openPlanningResult()} progressMessage={progressMessage} progressStage={progressStage} progressStates={progressStates} activeJob={activeJob} waitingItems={waitingItems} waitingDestination={waitingDestination} onSelectPlace={setWaitingPlace} onPause={() => { setProgressOpen(false); navigateNow("explore", "tab"); }} onCancel={async () => { if (!activeJob) return; try { await jsonRequest(`/api/plan/jobs/${activeJob.id}`,{method:"DELETE"}); generation.current?.abort(); setLoading(false); setActiveJob(null); setProgressOpen(false); setPlanningReady(null); setToast("已停止后台任务。"); } catch(caught){setError(caught instanceof Error?caught.message:"正在确认停止状态。");} }} /></div> : null}
+      <div hidden={progressOpen}>{view === "today" ? renderToday() : view === "create" ? renderWizard() : view === "adjust" ? renderAdjust() : view === "explore" ? renderExplore() : view === "sleep" ? renderSleep() : view === "fatigue" ? renderFatigue() : view === "profile" ? null : <BreathingOverlay open={view === "breathing"}>
+          <BreathingSession restingHeartRate={health?.restingHeartRate} onComplete={async (completed) => { await navigateBack(); if (completed && journey && ["active", "completed"].includes(journey.status)) void sendFeedback("完成了一次 3 分钟舒缓呼吸练习。", true); else setToast(completed ? "3 分钟练习已完成，回到自己的节奏。" : "练习已结束，随时可以再开始。"); }} />
+        </BreathingOverlay>}</div>
     </div>
-    {!loading && view === "create" && step < 3 ? <footer className={styles.wizardFooter}><div><button className={styles.textButton} disabled={busy} onClick={() => void saveDraft()}>{busy ? "保存中…" : "保存草稿"}</button>{step < 2 ? <button className={styles.primaryButton} disabled={busy} onClick={() => void advance()}>继续 <Icon name="arrow" size={19} /></button> : <button className={styles.textButton} onClick={() => { setConsent(false); setConsentOpen(true); }}>确认并生成 <Icon name="arrow" size={17} /></button>}</div></footer> : !detailView && !loading ? <nav className={styles.dock} aria-label="主导航"><button className={view === "today" ? styles.active : ""} aria-current={view === "today" ? "page" : undefined} onClick={() => navigate("today")}><Icon name="sun" />今日</button><button className={view === "adjust" ? styles.active : ""} aria-current={view === "adjust" ? "page" : undefined} onClick={() => navigate("adjust")}><Icon name="tune" />调整</button><button className={view === "explore" ? styles.active : ""} aria-current={view === "explore" ? "page" : undefined} onClick={() => navigate("explore")}><Icon name="compass" />探索</button><a href="/profile"><Icon name="person" />我的</a></nav> : null}
+    {!loading && !planningReady && view === "create" && step < 2 ? <footer className={styles.wizardFooter}><div><button className={styles.textButton} disabled={busy} onClick={() => void saveDraft()}>{busy ? "保存中…" : "保存草稿"}</button>{step < 2 ? <button className={styles.primaryButton} disabled={busy} onClick={() => void advance()}>继续 <Icon name="arrow" size={19} /></button> : <button className={styles.primaryButton} disabled={busy} onClick={openPlanningConsent}>确认并生成 <Icon name="arrow" size={17} /></button>}</div></footer> : !detailView && !progressOpen ? <AppDock view={view} disabled={busy} onNavigate={(next) => { void navigate(next, "tab"); }} /> : null}
+    <PlacePickerDialog citiesOnly={cityPicker === "origin"} open={cityPicker !== null} onClose={() => setCityPicker(null)} title={cityPicker === "origin" ? "选择出发地" : "选择目的地"} current={PLACES.find((entry) => entry.city === (cityPicker === "origin" ? form.originCity : form.destinationCity))} exclude={cityPicker === "origin" ? form.destinationCity : form.originCity} suggestions={[form.originCity, ...journeys.map((entry) => cityPicker === "origin" ? entry.draft.trip?.originCity ?? "" : entry.draft.trip?.destinationCity ?? "")].filter(Boolean)} onSelect={(entry) => { setForm((current) => cityPicker === "origin" ? { ...current, originCity: entry.city, departureTimezone: entry.timezone } : { ...current, destinationCity: entry.city, destinationTimezone: entry.timezone }); setConsent(false); }} />
     {toast ? <div className={styles.toast} role="status">{toast}</div> : null}
-    {pickerOpen ? <Modal title="我的旅程" onClose={closePicker}><button className={styles.primaryButton} onClick={newJourney}><Icon name="plus" />创建新旅程</button><div className={styles.journeyList}>{journeys.length ? journeys.map((entry) => <div className={styles.journeyRow} key={entry.id}><button onClick={() => selectJourney(entry)}><strong>{entry.title}</strong><small>{STATUS_LABELS[entry.status]} · {dateLabel(entry.updatedAt)}</small></button><button className={styles.iconButton} aria-label={`删除${entry.title}`} onClick={() => { setPickerOpen(false); setDeleteTarget(entry); }}><Icon name="trash" size={16} /></button></div>) : <p className={styles.note}>还没有保存的旅程。创建后可在这里继续。</p>}</div><button className={styles.textButton} disabled={busy} onClick={async () => { setBusy(true); try { const payload = await jsonRequest<{ journeys: Journey[] }>("/api/journeys"); setJourneys(payload.journeys); setToast("旅程列表已刷新。"); } catch (caught) { setError(caught instanceof Error ? caught.message : "刷新失败。"); } finally { setBusy(false); } }}><Icon name="sync" size={15} />刷新旅程列表</button></Modal> : null}
+
+    {candidate && !planningReady && journey && candidate.journeyId === journey.id ? <PlanReviewDialog current={journey} candidate={candidate} busy={busy} error={error} onDecision={decideCandidate} onClose={() => setCandidate(null)} /> : null}
+    {versions && journey ? <PlanReviewDialog current={journey} versions={versions} busy={busy} error={error} onRestore={restoreVersion} onClose={() => setVersions(null)} /> : null}
+    {pickerOpen ? <Modal title="我的旅程" onClose={closePicker}><button className={styles.primaryButton} disabled={loading || busy} onClick={() => void newJourney()}><Icon name="plus" />创建新旅程</button><div className={styles.journeyList}>{journeys.length ? journeys.map((entry) => <div className={styles.journeyRow} key={entry.id}><JourneyCover compact images={entry.plan?.visuals?.cover} fallback={coverForDestination().thumbnail} alt={entry.title} /><button disabled={busy} onClick={() => void selectJourney(entry.id)}><strong>{entry.title}</strong><small>{STATUS_LABELS[entry.status]} · {dateLabel(entry.updatedAt)}</small></button><button className={styles.iconButton} aria-label={`删除${entry.title}`} disabled={loading || busy} onClick={() => { setPickerOpen(false); setDeleteTarget(entry); }}><Icon name="trash" size={16} /></button></div>) : <p className={styles.note}>还没有保存的旅程。创建后可在这里继续。</p>}</div><button className={styles.textButton} disabled={busy} onClick={async () => { setBusy(true); try { const payload = await jsonRequest<{ journeys: Journey[] }>("/api/journeys"); setJourneys(payload.journeys); setToast("旅程列表已刷新。"); } catch (caught) { setError(caught instanceof Error ? caught.message : "刷新失败。"); } finally { setBusy(false); } }}><Icon name="sync" size={15} />刷新旅程列表</button></Modal> : null}
     {deleteTarget ? <Modal title="删除这段旅程？" onClose={closeDelete} busy={busy}><p>“{deleteTarget.title}”的行程和关联体验记录将被删除。这个操作无法撤销。</p><button className={styles.primaryButton} style={{ background: "#b90538" }} disabled={busy} onClick={() => void removeJourney()}>{busy ? "正在删除…" : "确认删除旅程"}</button><button className={styles.secondaryButton} disabled={busy} onClick={closeDelete}>保留旅程</button></Modal> : null}
     {consentOpen ? <Modal title="确认这次规划" onClose={closeConsent}>{renderConsent()}</Modal> : null}
-    {activity ? <Modal title={activity.name} onClose={closeActivity}><Badge tone={activity.fixed ? "green" : "muted"}><Icon name={activity.fixed ? "lock" : "clock"} size={14} />{activity.date ? `${activity.date} · ` : ""}{activity.time} · {activity.fixed ? "固定安排" : "可调整活动"}</Badge><p>{activity.detail}</p>{activity.fixed ? <div className={styles.inset}><Icon name="lock" /><p>规划时会保留你填写的固定安排，预订确认请以原始订单为准。</p></div> : null}<button className={styles.primaryButton} onClick={() => { setActivity(null); navigate("explore"); }}>查看当地体验与来源 <Icon name="arrow" /></button>{journey?.status !== "completed" ? <button className={styles.secondaryButton} onClick={() => { setActivity(null); startAdjustment(); }}>调整这段旅程的节奏</button> : null}</Modal> : null}
+    {metricDetail ? <Modal title={metricDetail === "recovery" ? "恢复指数详情" : "步数记录详情"} onClose={() => setMetricDetail(null)}><div className={styles.stack}><h2>{metricDetail === "recovery" ? `${number(health?.recoveryScore)} / 100` : health?.cycleSteps?.toLocaleString("zh-CN") ?? "—"}</h2><p>{metricDetail === "recovery" ? whoopMetricLabel(whoopDisplay, health?.recoveryScore, "recoveryScore") : whoopMetricLabel(whoopDisplay, health?.cycleSteps, "cycleSteps")}</p><p>{metricDetail === "recovery" ? "来自 WHOOP 最近一次恢复记录，不表示此刻或未来旅行时的状态。" : "来自 WHOOP 最近周期的步数记录；未收到测量值时显示为空，不把缺失数据当作零。"}</p>{whoopDisplay.retrievedAt ? <small>最近读取：{dateLabel(whoopDisplay.retrievedAt, true)}</small> : null}{health?.measuredAt ? <small>记录时间：{dateLabel(health.measuredAt, true)}</small> : null}{renderWhoopStatus()}</div></Modal> : null}
+    {waitingPlace ? <Modal title="当地推荐详情" onClose={() => setWaitingPlace(null)} footer={<a className={styles.primaryButton} href={waitingPlace.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">打开原始来源 ↗</a>}><div className={styles.stack}><EditorialImage imageUrl={waitingPlace.imageUrl} product={waitingPlace.source === "飞猪实时搜索"} subject={waitingPlace.category + " " + waitingPlace.name} /><Badge tone="mint">{waitingPlace.category}</Badge><h3>{waitingPlace.name}</h3><p>{waitingPlace.reason}</p><small>来源：{waitingPlace.source}</small>{planningReady ? <div className={styles.inset} role="status"><Icon name="check" /><div><strong>{planningReady === "saved" ? "行程已生成并保存" : "调整方案已准备好"}</strong><p>你可以继续看完这里，再打开安排。</p><button className={styles.textButton} onClick={openPlanningResult}>{planningReady === "saved" ? "查看行程" : "查看调整方案"} <Icon name="arrow" /></button></div></div> : null}<p className={styles.note}>{loading ? "行程仍在后台编排，浏览这里不会中断生成。" : "这条资料来自本次检索。"}价格、余位及开放时间以原始页面为准。</p></div></Modal> : null}
+    {shareOpen && journey ? <ShareDialog key={`${journey.id}:${journey.version}`} journey={journey} onClose={closeShare} onCreated={() => setSharesRevision((current) => current + 1)} /> : null}
+    {feedbackOpen && journey ? <Modal title="记录这次旅行感受" onClose={closeFeedback} busy={busy} footer={<button type="button" className={styles.primaryButton} disabled={busy || (!feedbackNote.trim() && !feedbackFatigue && !feedbackStress) || (remember && !memoryNote.trim())} onClick={() => void sendFeedback()}>{busy ? "正在保存…" : "保存旅行感受"}</button>}><div className={styles.stack}><PhraseInput label="这次的感受" value={feedbackNote} onChange={setFeedbackNote} phrases={["午休后舒服一些", "步行有点多", "很喜欢今天的安排"]} placeholder="写下想记录的体验" maxLength={1000} rows={3} disabled={busy} /><div className={styles.ratingColumns}><QuickRating label="本次疲劳自评" value={feedbackFatigue} onChange={setFeedbackFatigue} disabled={busy} /><QuickRating label="本次压力自评" value={feedbackStress} onChange={setFeedbackStress} disabled={busy} /></div><label className={styles.checkLabel}><input type="checkbox" checked={remember} disabled={busy} onChange={(event) => setRemember(event.target.checked)} /><span>为下次旅程记住一项偏好</span></label>{remember ? <PhraseInput label="想保留的偏好" value={memoryNote} onChange={setMemoryNote} phrases={["抵达当天留出休息", "减少连续步行"]} maxLength={1000} rows={2} disabled={busy} /> : null}{error ? <p role="alert" className={styles.error}>{error}</p> : null}</div></Modal> : null}
+    {dayDetail && plan ? <Modal title={`${dayDetail} · 完整安排`} onClose={() => setDayDetail("")} footer={journey?.status !== "completed" ? <button type="button" className={styles.primaryButton} disabled={busy || !journey?.planCurrent} onClick={() => { setSelectedDay(dayDetail); setPlanEditor({ initialDate: dayDetail }); setDayDetail(""); }}><Icon name="edit" />编辑这一天与活动顺序</button> : undefined}><Timeline items={itineraryDays.find(([date]) => date === dayDetail)?.[1] ?? []} onSelect={(item) => { setDayDetail(""); setActivity(item); }} /></Modal> : null}
+    {planEditor && journey ? <ItineraryEditor key={journey.id} journey={journey} onSave={saveManualItinerary} onClose={() => setPlanEditor(null)} initialDate={planEditor.initialDate} initialIndex={planEditor.initialIndex} busy={busy || loading} /> : null}
+    {activity ? <Modal title={activity.name} onClose={closeActivity} footer={journey?.status !== "completed" ? <button type="button" className={styles.primaryButton} disabled={busy || loading} onClick={() => openPlanEditor(activity)}><Icon name="edit" />修改这项活动</button> : undefined}><div className={styles.stack}>{activitySource?.source === "飞猪实时搜索" ? <EditorialImage imageUrl={activitySource.imageUrl} product subject={activitySource.name} /> : null}<Badge tone={activity.fixed ? "green" : "muted"}><Icon name={activity.fixed ? "lock" : "clock"} size={14} />{activity.date ? `${activity.date} · ` : ""}{activity.time} · {activity.fixed ? "固定安排" : "可调整活动"}</Badge><p>{activity.detail}</p>{activitySource ? <button className={styles.textButton} onClick={() => { setActivity(null); setPlace(activitySource); }}>查看已关联来源 · {activitySource.source} <Icon name="arrow" /></button> : null}{activity.fixed ? <div className={styles.inset}><Icon name="lock" /><p>固定安排不会在排序时自动移动。手动修改时不会更改供应商的预约或订单。</p></div> : null}<button className={styles.secondaryButton} onClick={() => { setActivity(null); navigate("explore"); }}>查看当地体验与来源 <Icon name="arrow" /></button>{journey?.status !== "completed" ? <button className={styles.textButton} onClick={() => { setActivity(null); startAdjustment(); }}>让 AI 重新调整旅程节奏</button> : null}</div></Modal> : null}
     {place ? (
-        <Modal title="当地体验详情" onClose={closePlace}>
           <PlaceDetail
+            key={place.url}
             place={place}
+            tripStart={reservationRange.start}
+            tripEnd={form.returnDate ? reservationRange.end : ""}
+            initialDate={selectedDay}
             whoopConnected={whoopConnected}
-            busy={busy}
             onClose={closePlace}
-            onAddToDay={(slot) => {
-              if (!slot) { setPlace(null); return; }
+            busy={busy}
+            onAddToDay={async (slot) => {
+              if (!slot || journey?.status === "completed") return false;
+              if (journey?.plan) {
+                await saveManualItinerary([{ type: "add", date: slot.date, time: slot.time, name: slot.placeName,
+                  detail: `${place.reason}\n来源：${place.source}`, sourceUrl: place.url, fixed: false }]);
+                setPlace(null); setSelectedDay(slot.date); navigateNow("today");
+                setToast("活动已保存到行程，无需重新生成。"); return true;
+              }
               // The intent joins the traveller's own itinerary text, which the
               // planner reads as a real item on the next generation.
-              const line = slot.time + " | " + slot.placeName + " | 灵活";
-              update("itineraryText", form.itineraryText ? form.itineraryText + "\n" + line : line);
+              const name = slot.placeName.replace(/[|｜\r\n]/g, " ").trim().slice(0, 120);
+              const line = slot.date + " " + slot.time + " | " + name + " | 灵活";
+              const next = form.itineraryText ? form.itineraryText + "\n" + line : line;
+              if (!name || next.length > 6000 || scheduleError(next)) return false;
+              update("itineraryText", next);
               setPlace(null);
-              setToast("已把「" + slot.placeName + " · " + slot.time + "」写进你的行程安排，可在节奏页调整。");
+              setToast("已添加「" + slot.placeName + " · " + slot.date + " " + slot.time + "」到待安排活动，重新规划后纳入行程。");
+              return true;
             }}
           />
-        </Modal>
       ) : null}
-  </main>;
+  </main></div>
+    {activeJob && !progressOpen ? <button className={styles.taskBar} disabled={busy} onClick={() => { setProgressOpen(true); if (view === "profile") navigateNow("explore", "tab"); }}><span role="status">{waitingDestination || "旅程"} · {planningReady === "saved" ? "已生成并保存" : planningReady === "review" ? "调整方案待确认" : ["failed", "indeterminate"].includes(activeJob.state) ? "生成未完成" : activeJob.state === "cancelled" ? "已停止" : "正在整理"}</span><span>查看进度与推荐 ↗</span></button> : null}
+    {profileVisited ? <div hidden={view !== "profile"} inert={busy}>
+      {error ? <div className={styles.error} role="alert"><span>{error}</span><button type="button" className={styles.iconButton} aria-label="关闭错误提示" onClick={() => setError("")}><Icon name="close" size={16} /></button></div> : null}
+      <ProfileView onNavigate={(next, intent) => { void (next === "create" ? newJourney() : navigate(next, intent)); }} navigationBusy={busy} whoopDisplay={whoopDisplay} onWhoopDisplayChange={receiveWhoopDisplay} onAccountChanged={notifyAccountChanged} onRefreshJourneys={refreshJourneys} onSyncWhoop={syncHealth} journeys={journeys} selectedJourneyId={selectedId} sharesRevision={sharesRevision} />
+    </div> : null}
+  </>;
 }

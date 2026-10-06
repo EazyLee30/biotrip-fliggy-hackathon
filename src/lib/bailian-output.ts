@@ -21,6 +21,25 @@ export class AgentStreamError extends Error {
   }
 }
 
+export type AgentOutputErrorCode =
+  | "INVALID_AGENT_JSON"
+  | "INVALID_AGENT_STRUCTURED_DATA"
+  | "INVALID_PLAN_ADJUSTMENTS"
+  | "INVALID_PLAN_DATE"
+  | "INCOMPLETE_TRAVEL_PLAN"
+  | "FIXED_SCHEDULE_NOT_PRESERVED";
+
+/** Static codes survive pipeline normalisation without exposing model output. */
+export class AgentOutputError extends Error {
+  readonly code: AgentOutputErrorCode;
+
+  constructor(code: AgentOutputErrorCode) {
+    super(code);
+    this.name = "AgentOutputError";
+    this.code = code;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -161,8 +180,14 @@ export async function consumeAgentResponse(
 export function parseJsonText(text: string) {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i);
-  const parsed: unknown = JSON.parse(fenced ? fenced[1] : trimmed);
-  if (!isRecord(parsed)) throw new Error("Agent returned invalid structured data.");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fenced ? fenced[1] : trimmed);
+  } catch {
+    // SyntaxError messages can quote the original response. Never propagate it.
+    throw new AgentOutputError("INVALID_AGENT_JSON");
+  }
+  if (!isRecord(parsed)) throw new AgentOutputError("INVALID_AGENT_STRUCTURED_DATA");
   return parsed;
 }
 
@@ -185,7 +210,7 @@ export function parsePlan(text: string, fixedItems: FixedScheduleItem[]) {
   const summary = typeof source.summary === "string" ? source.summary.slice(0, 700) : null;
   const reason = typeof source.reason === "string" ? source.reason.slice(0, 700) : null;
   if (!Array.isArray(source.adjustments) || source.adjustments.some((item) => typeof item !== "string")) {
-    throw new Error("Travel Agent returned invalid adjustments.");
+    throw new AgentOutputError("INVALID_PLAN_ADJUSTMENTS");
   }
   const adjustments = source.adjustments.slice(0, 8).map((item: string) => item.slice(0, 260));
   const places = Array.isArray(source.places) ? source.places.filter(isRecord).slice(0, 8).map((place) => {
@@ -197,14 +222,26 @@ export function parsePlan(text: string, fixedItems: FixedScheduleItem[]) {
     if (typeof item.time !== "string" || !/^\d{2}:\d{2}$/.test(item.time) || typeof item.name !== "string" || typeof item.detail !== "string" || typeof item.fixed !== "boolean") return null;
     const [hour, minute] = item.time.split(":").map(Number);
     if (hour > 23 || minute > 59) return null;
-    if (item.date !== undefined && (typeof item.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.date) || new Date(`${item.date}T00:00:00Z`).toISOString().slice(0, 10) !== item.date)) return null;
-    return { time: item.time, name: item.name.slice(0, 160), detail: item.detail.slice(0, 500), fixed: item.fixed, ...(typeof item.date === "string" ? { date: item.date } : {}) };
+    if (item.date !== undefined) {
+      if (typeof item.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
+        throw new AgentOutputError("INVALID_PLAN_DATE");
+      }
+      const date = new Date(`${item.date}T00:00:00Z`);
+      if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== item.date) {
+        throw new AgentOutputError("INVALID_PLAN_DATE");
+      }
+    }
+    return { time: item.time, name: item.name.slice(0, 160), detail: item.detail.slice(0, 500), fixed: item.fixed,
+      ...(typeof item.kind === "string" && ["sight", "meal", "rest", "relax", "stay", "experience", "transit", "other"].includes(item.kind) ? { kind: item.kind as import("./journey-types").ActivityKind } : {}),
+      ...(item.effort === 1 || item.effort === 2 || item.effort === 3 ? { effort: item.effort as 1 | 2 | 3 } : {}),
+      ...(typeof item.duration_min === "number" && Number.isInteger(item.duration_min) && item.duration_min >= 5 && item.duration_min <= 600 ? { durationMin: item.duration_min } : {}),
+      ...(typeof item.move_mode === "string" && ["walk", "transit", "taxi", "none"].includes(item.move_mode) ? { move: { mode: item.move_mode as import("./journey-types").MoveMode, basis: "unverified" as const } } : {}), ...(typeof item.date === "string" ? { date: item.date } : {}) };
   }).filter((item): item is NonNullable<typeof item> => item !== null) : [];
 
-  if (!summary?.trim() || !reason?.trim() || !itinerary.length) throw new Error("Travel Agent returned an incomplete itinerary.");
+  if (!summary?.trim() || !reason?.trim() || !itinerary.length) throw new AgentOutputError("INCOMPLETE_TRAVEL_PLAN");
   for (const fixed of fixedItems) {
     if (!itinerary.some((item) => item.fixed && item.time === fixed.time && item.name === fixed.name && (!fixed.date || item.date === fixed.date))) {
-      throw new Error("Travel Agent did not preserve a fixed schedule item.");
+      throw new AgentOutputError("FIXED_SCHEDULE_NOT_PRESERVED");
     }
   }
   return { headline, summary, reason, adjustments, itinerary, places };

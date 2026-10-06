@@ -7,7 +7,12 @@ export type BailianConfig = {
   insightEnvironmentId: string | null;
   localInfoAgentId: string | null;
   localInfoEnvironmentId: string | null;
+  composeAgentId?: string | null;
+  composeEnvironmentId?: string | null;
   flyaiVaultId: string | null;
+  mobilityAgentId?: string | null;
+  mobilityEnvironmentId?: string | null;
+  mobilityMcpServerId?: string | null;
   region: string;
 };
 
@@ -25,6 +30,11 @@ export function getBailianConfig(): BailianConfig | null {
     insightEnvironmentId: process.env.BAILIAN_INSIGHT_ENVIRONMENT_ID || null,
     localInfoAgentId: process.env.BAILIAN_LOCAL_INFO_AGENT_ID || null,
     localInfoEnvironmentId: process.env.BAILIAN_LOCAL_INFO_ENVIRONMENT_ID || null,
+    composeAgentId: process.env.BAILIAN_COMPOSE_AGENT_ID || null,
+    composeEnvironmentId: process.env.BAILIAN_COMPOSE_ENVIRONMENT_ID || process.env.BAILIAN_INSIGHT_ENVIRONMENT_ID || BAILIAN_ENVIRONMENT_ID,
+    mobilityAgentId: process.env.BAILIAN_MOBILITY_AGENT_ID || null,
+    mobilityEnvironmentId: process.env.BAILIAN_MOBILITY_ENVIRONMENT_ID || null,
+    mobilityMcpServerId: process.env.BAILIAN_MOBILITY_MCP_SERVER_ID || null,
     flyaiVaultId: process.env.BAILIAN_FLYAI_VAULT_ID || null,
     region: process.env.BAILIAN_REGION || "cn-beijing",
   };
@@ -47,13 +57,19 @@ export async function bailianRequest(config: BailianConfig, path: string, init: 
   return response;
 }
 
-export async function deleteBailianSession(config: BailianConfig, sessionId: string) {
+export type BailianSessionCleanup = { confirmed: boolean; status: number | null };
+
+export async function deleteBailianSession(config: BailianConfig, sessionId: string): Promise<BailianSessionCleanup> {
   try {
-    await bailianRequest(config, `/sessions/${encodeURIComponent(sessionId)}`, {
+    const response = await bailianRequest(config, `/sessions/${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(10_000),
     });
+    // Status is sufficient; the response body can contain conversation details.
+    return { confirmed: response.ok || response.status === 404, status: response.status };
   } catch {
-    // Session cleanup is best-effort; never log health-bearing conversation details.
+    // Cleanup cannot replace the planning result, but a network failure is not
+    // confirmation that the provider removed the session. Never expose errors.
+    return { confirmed: false, status: null };
   }
 }

@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   }
   // An existing connection is reused as-is. Re-authorising would be an
   // unnecessary interruption for a traveller who already said yes once.
-  if (await readWhoopTokens(account.id).catch(() => null)) {
+  if (new URL(request.url).searchParams.get("reauthorize") !== "1" && await readWhoopTokens(account.id).catch(() => null)) {
     return NextResponse.redirect(new URL("/?whoop=connected", request.url));
   }
 

@@ -1,7 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { getDatabase } from "@/lib/auth";
+import { withActivityIds, identifyGeneratedActivities } from "@/lib/itinerary-edit";
+export { withActivityIds, identifyGeneratedActivities } from "@/lib/itinerary-edit";
+import { createHash, randomUUID } from "node:crypto";
+import { getDatabase } from "@/lib/database";
 import { learnFromDraft, learnFromFeedback } from "@/lib/preferences";
 import type { Journey, JourneyDraft, JourneyFeedback, JourneyFeedbackInput, JourneyGeneratedPlan, JourneyMemory, JourneyStatus, JourneyTripDraft } from "@/lib/journey-types";
+import { applyItineraryOperations, ItineraryEditError, itineraryDates, syncItineraryReservations, type ItineraryOperation } from "@/lib/itinerary-edit";
 
 export type { Journey, JourneyDraft, JourneyFeedback, JourneyFeedbackInput, JourneyGeneratedPlan, JourneyMemory, JourneyStatus } from "@/lib/journey-types";
 
@@ -123,7 +126,7 @@ export function parseJourneyDraft(value: unknown): JourneyDraft {
 function iso(seconds: number | null) { return seconds === null ? null : new Date(seconds * 1000).toISOString(); }
 function fromRow(row: JourneyRow): Journey {
   return { id: row.id, title: row.title, status: row.status, draft: JSON.parse(row.draft_json) as JourneyDraft,
-    plan: row.plan_json ? JSON.parse(row.plan_json) as JourneyGeneratedPlan : null,
+    plan: row.plan_json ? withActivityIds(JSON.parse(row.plan_json) as JourneyGeneratedPlan, row.id) : null,
     planCurrent: Boolean(row.plan_json && row.plan_draft_json === row.draft_json), version: row.version,
     createdAt: iso(row.created_at)!, updatedAt: iso(row.updated_at)!, startedAt: iso(row.started_at), completedAt: iso(row.completed_at) };
 }
@@ -157,6 +160,22 @@ export async function createJourney(accountId: string, value: unknown) {
 }
 
 function conflict(): never { throw new JourneyError(409, "JOURNEY_CHANGED", "旅程已在另一页面更新，请刷新后再操作。"); }
+
+/** Reject invalid or stale targets before spending time on provider calls. */
+export async function checkJourneyForGeneration(accountId: string, journeyId: unknown, expectedVersion: unknown) {
+  if (journeyId === undefined) {
+    if (expectedVersion !== undefined) invalid("请刷新旅程后重试。");
+    return null;
+  }
+  if (typeof journeyId !== "string") invalid("旅程标识无效，请刷新后重试。");
+  requireJourneyId(journeyId);
+  const version = requireVersion(expectedVersion);
+  const current = await getJourney(accountId, journeyId);
+  if (current.version !== version) conflict();
+  if (current.status === "completed") throw new JourneyError(409, "JOURNEY_COMPLETED", "已完成的旅程不能重新规划。");
+  return current;
+}
+
 export async function updateJourney(accountId: string, id: string, value: unknown) {
   if (!isRecord(value)) invalid();
   onlyKeys(value, ["version", "title", "draft", "status"]);
@@ -184,8 +203,8 @@ export async function updateJourney(accountId: string, id: string, value: unknow
   const result = await getDatabase().prepare(`UPDATE journeys SET title = ?, draft_json = ?, status = ?, version = version + 1,
     updated_at = unixepoch(), started_at = CASE WHEN ? = 'active' THEN COALESCE(started_at, unixepoch()) ELSE started_at END,
     completed_at = CASE WHEN ? = 'completed' THEN unixepoch() ELSE completed_at END
-    WHERE id = ? AND account_id = ? AND version = ?`).bind(title, JSON.stringify(draft), status, status, status, id, accountId, version).run();
-  if (result.meta.changes !== 1) conflict();
+    WHERE id = ? AND account_id = ? AND version = ? RETURNING version`).bind(title, JSON.stringify(draft), status, status, status, id, accountId, version).first<{ version: number }>();
+  if (!result) conflict();
   if (draftChanged) await learnFromDraft(accountId, draft);
   return getJourney(accountId, id);
 }
@@ -204,7 +223,7 @@ export async function saveGeneratedJourney(accountId: string, value: {
     const id = randomUUID();
     await getDatabase().prepare(`INSERT INTO journeys (id, account_id, title, status, draft_json, plan_json, plan_draft_json)
       VALUES (?, ?, ?, 'planned', ?, ?, ?)`)
-      .bind(id, accountId, journeyTitle(draft), encodedDraft, encodedPlan, encodedDraft).run();
+      .bind(id, accountId, journeyTitle(draft), encodedDraft, JSON.stringify(identifyGeneratedActivities(value.generated, id)), encodedDraft).run();
     return getJourney(accountId, id);
   }
   requireJourneyId(value.journeyId);
@@ -214,18 +233,71 @@ export async function saveGeneratedJourney(accountId: string, value: {
   if (current.status === "completed") throw new JourneyError(409, "JOURNEY_COMPLETED", "已完成的旅程不能重新规划。");
   const result = await getDatabase().prepare(`UPDATE journeys SET draft_json = ?, plan_json = ?, plan_draft_json = ?,
     status = CASE WHEN status = 'active' THEN 'active' ELSE 'planned' END,
-    version = version + 1, updated_at = unixepoch() WHERE id = ? AND account_id = ? AND version = ? AND status <> 'completed'`)
-    .bind(encodedDraft, encodedPlan, encodedDraft, value.journeyId, accountId, version).run();
-  if (result.meta.changes !== 1) conflict();
+    version = version + 1, updated_at = unixepoch() WHERE id = ? AND account_id = ? AND version = ? AND status <> 'completed' RETURNING version`)
+    .bind(encodedDraft, JSON.stringify(identifyGeneratedActivities(value.generated, value.journeyId, current.plan)), encodedDraft, value.journeyId, accountId, version).first<{ version: number }>();
+  if (!result) conflict();
   return getJourney(accountId, value.journeyId);
+}
+
+/** Persist only explicit edits; product URLs, health context and provenance cannot be submitted by the client. */
+export async function updateJourneyItinerary(accountId: string, id: string, value: unknown) {
+  if (!isRecord(value)) invalid();
+  onlyKeys(value, ["version", "operations"]);
+  const version = requireVersion(value.version);
+  const current = await getJourney(accountId, id);
+  if (current.version !== version) conflict();
+  if (current.status === "completed") throw new JourneyError(409, "JOURNEY_COMPLETED", "已完成的旅程不能修改行程。");
+  if (!current.plan || !current.planCurrent) throw new JourneyError(409, "PLAN_NOT_CURRENT", "请先为当前偏好生成行程，再手动调整。");
+  // Same digest as reservePlanning. The final conditional UPDATE also checks
+  // this lease, closing the race between the preliminary read and this save.
+  const lockKey = createHash("sha256").update(`plan:active:${accountId}`).digest("hex");
+  const hasGeneration = async () => Boolean(await getDatabase().prepare("SELECT 1 AS active FROM auth_rate_limits WHERE limit_key = ? AND reset_at > unixepoch()")
+    .bind(lockKey).first());
+  const inProgress = () => new JourneyError(409, "PLANNING_IN_PROGRESS", "行程正在重新生成，请等待完成或取消后再调整。");
+  if (await hasGeneration()) throw inProgress();
+  let itinerary, draft;
+  try {
+    const original = current.plan.plan.itinerary;
+    if (Array.isArray(value.operations)) {
+      const known = new Set([...current.plan.plan.places.map(place => place.url), ...current.plan.localServices.map(place => place.sourceUrl), ...(current.plan.visuals?.cover ?? []).map(image => image.url), ...Object.keys(current.plan.visuals?.images ?? {})]);
+      for (const operation of value.operations) if (isRecord(operation) && operation.sourceUrl !== undefined && !known.has(operation.sourceUrl as string)) throw new ItineraryEditError("请选择这份行程中已检索的来源，不能关联其他链接。");
+    }
+    const result = applyItineraryOperations(original, value.operations as ItineraryOperation[], current.draft.trip ?? {});
+    itinerary = result.itinerary;
+    const firstDate = itineraryDates(original, current.draft.trip ?? {})[0];
+    const itineraryText = syncItineraryReservations(current.draft.trip?.itineraryText ?? "", original, result.reservationChanges, firstDate);
+    draft = parseJourneyDraft({ ...current.draft, trip: { ...current.draft.trip, itineraryText } });
+  } catch (error) {
+    if (error instanceof ItineraryEditError) throw new JourneyError(400, error.code, error.message);
+    throw error;
+  }
+  const operationCount = (value.operations as ItineraryOperation[]).length;
+  const generated: JourneyGeneratedPlan = { ...current.plan,
+    plan: { ...current.plan.plan, itinerary },
+    manualAdjustment: { updatedAt: new Date().toISOString(), revision: (current.plan.manualAdjustment?.revision ?? 0) + 1, operationCount },
+  };
+  const encodedDraft = JSON.stringify(draft), encodedPlan = JSON.stringify(generated);
+  if (encodedPlan.length > PLAN_LIMIT) invalid("调整后的行程内容过长，请精简详情。");
+  const result = await getDatabase().prepare(`UPDATE journeys SET draft_json = ?, plan_json = ?, plan_draft_json = ?,
+    version = version + 1, updated_at = unixepoch()
+    WHERE id = ? AND account_id = ? AND version = ? AND status <> 'completed'
+    AND NOT EXISTS (SELECT 1 FROM auth_rate_limits WHERE limit_key = ? AND reset_at > unixepoch()) RETURNING version`)
+    .bind(encodedDraft, encodedPlan, encodedDraft, id, accountId, version, lockKey).first<{ version: number }>();
+  if (!result) {
+    if (await hasGeneration()) throw inProgress();
+    conflict();
+  }
+  return getJourney(accountId, id);
 }
 
 export async function deleteJourney(accountId: string, id: string, version: number) {
   requireJourneyId(id); requireVersion(version);
   const current = await getJourney(accountId, id);
   if (current.version !== version) conflict();
-  const result = await getDatabase().prepare("DELETE FROM journeys WHERE id = ? AND account_id = ? AND version = ?").bind(id, accountId, version).run();
-  if (result.meta.changes !== 1) conflict();
+  const active = await getDatabase().prepare("SELECT id FROM planning_jobs WHERE journey_id=? AND account_id=? AND state IN ('queued','running','cancel_requested')").bind(id,accountId).first();
+  if (active) throw new JourneyError(409,"PLANNING_IN_PROGRESS","请先停止后台任务，再删除旅程。");
+  const result = await getDatabase().prepare("DELETE FROM journeys WHERE id = ? AND account_id = ? AND version = ? RETURNING id").bind(id, accountId, version).first<{ id: string }>();
+  if (!result) conflict();
 }
 
 export function parseFeedback(value: unknown) {

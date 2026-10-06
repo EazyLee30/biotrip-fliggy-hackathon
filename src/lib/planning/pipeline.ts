@@ -1,5 +1,7 @@
+import type { FlyaiSource } from "@/lib/flyai";
 import type { PlanProgress } from "@/lib/plan-response";
-import { getRecentWhoopMetrics, readWhoopTokens, WhoopReauthorizationRequiredError } from "@/lib/whoop";
+import { inventoryRecommendations, localRecommendations, type PlanRecommendation, type PlanRecommendations } from "@/lib/planning-recommendations";
+import { getRecentWhoopMetrics, readWhoopTokens, WhoopReauthorizationRequiredError } from "@/lib/whoop-core";
 import type { PlannerInput, ScheduleItem } from "@/lib/planner-input";
 import {
   buildStageInput,
@@ -16,6 +18,7 @@ import {
   type TripTiming,
 } from "./contract";
 import { PLAN_BUDGET_MS, STAGE_BY_NAME } from "./stages";
+import { destinationVisuals } from "../destination-visuals";
 import { resolvePlanningProvider } from "./providers";
 
 /** How each stage actually behaved, so the interface can be honest about it. */
@@ -33,12 +36,14 @@ export type PlanningProvenance = {
   requestedAt: string;
   stages: StageReport[];
   health: { basis: HealthBasis; whoopUnavailable: boolean };
-  local: { verified: boolean; reason?: string };
-  flyai: { searches: number; failedSearches: number; failedCategories: string[]; sourceCount: number; executor: "agent_skill" | "worker" };
+  local: { verified: boolean; reason?: string; unverifiedCount?: number };
+  flyai: { searches: number; failedSearches: number; failedCategories: string[]; sourceCount: number; compositionSourceCount?: number; recommendedSourceCount?: number; executor: "agent_skill" | "worker"; fallbackReason?: string };
   memory: { applied: boolean; source: "learned" | "profile" | "none"; noteCount: number };
 };
 
 export type PlanningOutcome = {
+  destinationCity?: string;
+  pois?: FlyaiSource[];
   health: HealthInsight | null;
   local: LocalResearch | null;
   inventory: FlyaiInventory;
@@ -58,7 +63,11 @@ export type RunPlanningRequest = {
   requestId: string;
   signal: AbortSignal;
   progress: (event: PlanProgress) => void;
+  /** Public sources only, emitted as soon as each independent retrieval completes. */
+  recommendations?: (event: PlanRecommendations) => void;
   memory: MemoryUsage;
+  sessionCreated?: StageContext["sessionCreated"];
+  checkpoint?: <T>(stage: PlanStage, run: () => Promise<T>) => Promise<T>;
 };
 
 function toPlannerError(stage: PlanStage, error: unknown) {
@@ -87,7 +96,9 @@ export async function runPlanning(request: RunPlanningRequest): Promise<Planning
   provider.assertConfigured();
 
   const reports: StageReport[] = [];
-  const planSignal = AbortSignal.any([signal, AbortSignal.timeout(PLAN_BUDGET_MS)]);
+  const controller = new AbortController();
+  const planSignal = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(PLAN_BUDGET_MS)]);
+  planSignal.throwIfAborted();
 
   const selfReport = {
     fatigue: input.fatigue,
@@ -103,20 +114,22 @@ export async function runPlanning(request: RunPlanningRequest): Promise<Planning
     planningStyle: input.trip.planningStyle,
   };
 
-  // WHOOP records are read once, before any stage runs, and are only ever
-  // copied into the stage input of the stage that declares the grant.
+  // Only health waits for WHOOP; destination and inventory searches can start
+  // immediately. Raw records are copied only into the tool-free health stage.
   let healthMetrics: unknown;
   let whoopUnavailable = false;
-  if (request.includeWhoop && request.isNearOrOngoingTrip && await readWhoopTokens(accountId).catch(() => null)) {
-    try {
-      healthMetrics = await getRecentWhoopMetrics(accountId);
-    } catch (error) {
-      // A revoked grant must not block the trip; planning continues from the
-      // traveller's own self-report and the interface offers to reconnect.
-      if (!(error instanceof WhoopReauthorizationRequiredError)) throw error;
-      whoopUnavailable = true;
+  const readHealth = async (stageSignal: AbortSignal) => {
+    if (request.includeWhoop && request.isNearOrOngoingTrip && await readWhoopTokens(accountId).catch(() => null)) {
+      stageSignal.throwIfAborted();
+      try {
+        healthMetrics = await getRecentWhoopMetrics(accountId, { signal: stageSignal });
+      } catch (error) {
+        if (!(error instanceof WhoopReauthorizationRequiredError)) throw error;
+        whoopUnavailable = true;
+      }
     }
-  }
+    stageSignal.throwIfAborted();
+  };
 
   const contextFor = (stage: PlanStage): StageContext => ({
     input: buildStageInput(STAGE_BY_NAME[stage].grants, {
@@ -126,6 +139,8 @@ export async function runPlanning(request: RunPlanningRequest): Promise<Planning
     signal: planSignal,
     requestId,
     progress,
+    sessionCreated: request.sessionCreated,
+    ...(stage === "flyai_inventory" ? { inventoryAvailable: (sources: readonly FlyaiSource[]) => emitRecommendations("flyai_inventory", inventoryRecommendations(sources)) } : {}),
     timing,
     fixedItems: request.fixedItems,
     includeWhoop: request.includeWhoop,
@@ -133,19 +148,28 @@ export async function runPlanning(request: RunPlanningRequest): Promise<Planning
   });
 
   /** Runs one stage under its own budget, applying the degradation policy. */
-  const execute = async <T>(stage: PlanStage, run: () => Promise<T>, fallback: () => T): Promise<T> => {
+  const execute = async <T>(stage: PlanStage, run: (ctx: StageContext) => Promise<T>, fallback: () => T): Promise<T> => {
     const policy = STAGE_BY_NAME[stage];
     const startedAt = Date.now();
-    progress({ stage, message: `${policy.label}进行中` });
+    const stageSignal = AbortSignal.any([planSignal, AbortSignal.timeout(policy.budgetMs)]);
+    const ctx = { ...contextFor(stage), signal: stageSignal };
+    progress({ stage, status: "running", message: `${policy.label}进行中` });
     try {
-      const result = await run();
+      stageSignal.throwIfAborted();
+      const result = await (request.checkpoint ? request.checkpoint(stage, () => run(ctx)) : run(ctx));
+      stageSignal.throwIfAborted();
       reports.push({ stage, label: policy.label, status: "ok", elapsedMs: Date.now() - startedAt });
+      progress({ stage, status: "ok", elapsedMs: Date.now() - startedAt, message: `${policy.label}已完成` });
       return result;
     } catch (error) {
       const failure = toPlannerError(stage, error);
       // A degradable stage reports honestly and planning continues. A required
       // stage fails the request: nothing downstream may be invented.
-      if (!policy.degradable) throw failure;
+      if (planSignal.aborted) throw failure;
+      if (!policy.degradable) {
+        controller.abort(failure);
+        throw failure;
+      }
       reports.push({
         stage,
         label: policy.label,
@@ -153,53 +177,80 @@ export async function runPlanning(request: RunPlanningRequest): Promise<Planning
         reason: `${policy.label}本次未核验（${failure.code}）`,
         elapsedMs: Date.now() - startedAt,
       });
-      progress({ stage, message: `${policy.label}本次未核验，将继续用已核验来源编排` });
+      progress({ stage, status: "degraded", elapsedMs: Date.now() - startedAt, message: `${policy.label}本次未核验，将继续用已核验来源编排` });
       return fallback();
     }
   };
 
   progress({ stage: "preparing", message: "正在整理本次行程信息" });
 
-  // The two advisory stages are independent, so they run concurrently.
-  const advisory = await Promise.allSettled([
+  const localRequested = input.trip.requestedServices.some((service) => LOCAL_SERVICE_KINDS.has(service));
+  const published = new Set<string>();
+  const emitRecommendations = (stage: PlanRecommendations["stage"], items: PlanRecommendation[]) => {
+    if (planSignal.aborted || !items.length || !request.recommendations) return;
+    const fresh = items.filter(item => !published.has(`${stage}:${item.url}`));
+    if (!fresh.length) return;
+    try {
+      request.recommendations({ stage, destination: input.trip.destinationCity, retrievedAt: new Date().toISOString(), items: fresh });
+      for (const item of fresh) published.add(`${stage}:${item.url}`);
+    } catch { /* A preview transport failure must not invalidate the generated itinerary. */ }
+  };
+  if (!localRequested) {
+    reports.push({ stage: "local_research", label: STAGE_BY_NAME.local_research.label, status: "skipped", reason: "本次未请求当地服务资料", elapsedMs: 0 });
+    progress({ stage: "local_research", status: "skipped", elapsedMs: 0, message: "本次未请求当地服务资料，已跳过" });
+  }
+
+  // All three inputs are independent. Only the composing stage waits for them.
+  const preparatory = [
     execute<HealthInsight | null>(
       "health_insight",
-      () => provider.healthInsight(contextFor("health_insight")),
+      async (ctx) => {
+        await readHealth(ctx.signal);
+        return provider.healthInsight({ ...ctx, input: contextFor("health_insight").input });
+      },
       () => null,
     ),
-    execute<LocalResearch | null>(
+    localRequested ? execute<LocalResearch | null>(
       "local_research",
-      () => provider.localResearch(contextFor("local_research")),
+      (ctx) => provider.localResearch(ctx),
       () => null,
-    ),
-  ]);
-  for (const outcome of advisory) {
-    if (outcome.status === "rejected") {
-      // Attribute the failure to the stage that produced it, not to health by default.
-      throw toPlannerError(advisory[0].status === "rejected" && outcome === advisory[0] ? "health_insight" : "local_research", outcome.reason);
+    ).then((result) => { if (result) emitRecommendations("local_research", localRecommendations(result.services)); return result; }) : Promise.resolve(null),
+    execute<FlyaiInventory>("flyai_inventory", async (ctx) => {
+      const result = await provider.flyaiInventory(ctx);
+      if (!result.sources.length) {
+        throw new PlannerError("flyai_inventory", "flyai_search", 502, "NO_VERIFIED_FLYAI_SOURCE");
+      }
+      return result;
+    }, () => EMPTY_INVENTORY).then((result) => { emitRecommendations("flyai_inventory", inventoryRecommendations(result.sources)); return result; }),
+    execute<FlyaiSource[]>("poi_catalog", async (ctx) => (await destinationVisuals(accountId, input.trip.destinationCity, ctx.signal)).sources, () => []),
+  ] as const;
+  const [health, local, inventory, pois] = await Promise.all(preparatory).catch(async (error: unknown) => {
+    controller.abort(error);
+    await Promise.allSettled(preparatory);
+    throw error;
+  });
+  if (localRequested && local && (!local.services.length || local.unverifiedCount)) {
+    const report = reports.find((item) => item.stage === "local_research");
+    if (report) {
+      report.status = "degraded";
+      report.reason = local.services.length
+        ? `保留 ${local.services.length} 条已核验资料，排除 ${local.unverifiedCount} 条未核验资料`
+        : "本次未检索到可核验的当地服务资料";
+      progress({ stage: "local_research", status: "degraded", elapsedMs: report.elapsedMs, message: report.reason });
     }
   }
-  const health = advisory[0].status === "fulfilled" ? advisory[0].value : null;
-  const local = advisory[1].status === "fulfilled" ? advisory[1].value : null;
-
-  // Inventory is required, and composition depends on it, so these stay
-  // sequential: the composer may only reference sources that already exist.
-  const inventory = await execute<FlyaiInventory>(
-    "flyai_inventory",
-    () => provider.flyaiInventory(contextFor("flyai_inventory")),
-    () => EMPTY_INVENTORY,
-  );
-  const gathered: GatheredResults = { health, local, inventory };
+  const gathered: GatheredResults = { health, local, inventory, pois };
   const plan = await execute(
     "compose_plan",
-    () => provider.composePlan(contextFor("compose_plan"), gathered),
+    (ctx) => provider.composePlan(ctx, gathered),
     () => { throw new PlannerError("compose_plan", "pipeline", 502, "PLANNING_RUNTIME_ERROR"); },
   );
 
-  const localRequested = input.trip.requestedServices.some((service) => LOCAL_SERVICE_KINDS.has(service));
   const localReport = reports.find((report) => report.stage === "local_research");
 
   return {
+    destinationCity: input.trip.destinationCity,
+    pois,
     health,
     local,
     inventory,
@@ -207,18 +258,22 @@ export async function runPlanning(request: RunPlanningRequest): Promise<Planning
     provenance: {
       provider: provider.id,
       requestedAt: new Date().toISOString(),
-      stages: reports,
+      stages: Object.keys(STAGE_BY_NAME).flatMap((stage) => reports.filter((report) => report.stage === stage)),
       health: { basis: health?.basis ?? derivedBasis(input, request.isNearOrOngoingTrip, healthMetrics !== undefined), whoopUnavailable },
       local: {
-        verified: Boolean(local),
-        ...(localRequested && !local ? { reason: localReport?.reason ?? "目的地当地服务资料本次未核验" } : {}),
+        verified: Boolean(local?.services.length),
+        ...(local?.unverifiedCount ? { unverifiedCount: local.unverifiedCount } : {}),
+        ...(localRequested && !local?.services.length ? { reason: localReport?.reason ?? "目的地当地服务资料本次未核验" } : {}),
       },
       flyai: {
         searches: inventory.searches,
         failedSearches: inventory.failedSearches,
         failedCategories: inventory.failedCategories,
         sourceCount: inventory.sources.length,
+        compositionSourceCount: Math.min(12, inventory.sources.length),
+        recommendedSourceCount: plan.places.length,
         executor: inventory.executor,
+        ...(inventory.fallbackReason ? { fallbackReason: inventory.fallbackReason } : {}),
       },
       memory: request.memory,
     },

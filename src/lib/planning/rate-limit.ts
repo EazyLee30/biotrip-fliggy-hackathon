@@ -1,5 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
-import { getDatabase } from "@/lib/auth";
+import { getDatabase } from "@/lib/database";
 import { JourneyError } from "@/lib/journeys";
 
 /**
@@ -15,7 +15,7 @@ import { JourneyError } from "@/lib/journeys";
  */
 export const PLANNING_HOURLY_LIMIT = 12;
 
-export type PlanningLease = { release: () => Promise<void> };
+export type PlanningLease = { token: number; release: () => Promise<void> };
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -28,6 +28,8 @@ export async function reservePlanning(
   leaseSeconds: number,
   database: Database = getDatabase(),
 ): Promise<PlanningLease> {
+  const active = await database.prepare("SELECT id FROM planning_jobs WHERE account_id=? AND state IN ('queued','running','cancel_requested')").bind(accountId).first();
+  if (active) throw new JourneyError(409, "PLANNING_IN_PROGRESS", "你的规划仍在后台执行，请恢复进度或先停止任务。");
   const now = Math.floor(Date.now() / 1000);
   const key = digest("plan:active", accountId);
   const token = randomInt(1, 2147483647);
@@ -59,7 +61,7 @@ export async function reservePlanning(
     if (!count || count.hit_count > PLANNING_HOURLY_LIMIT) {
       throw new JourneyError(429, "PLANNING_RATE_LIMIT", "本小时规划次数已达上限，请稍后再试。已保存的旅程可继续查看和调整。");
     }
-    return { release };
+    return { token, release };
   } catch (error) {
     await release();
     throw error;

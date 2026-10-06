@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getDatabase } from "@/lib/auth";
+import { getDatabase } from "@/lib/database";
 import type { JourneyDraft, JourneyFeedbackInput } from "@/lib/journey-types";
 
 /**

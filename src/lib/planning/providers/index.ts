@@ -16,26 +16,37 @@ import type { PlanningProvider } from "../contract";
  */
 export function resolvePlanningProvider(): PlanningProvider {
   const mode = (process.env.BAILIAN_PLANNING_MODE || "auto").trim().toLowerCase();
+  if (!["auto", "managed", "model"].includes(mode)) throw new Error("Invalid Bailian planning mode.");
   const config = getBailianConfig();
   const agentsUsable = Boolean(
     config?.agentId && config?.environmentId &&
     config?.localInfoAgentId && config?.localInfoEnvironmentId &&
+    config?.composeAgentId && (config?.composeEnvironmentId || config?.insightEnvironmentId || config?.environmentId) &&
     config?.flyaiVaultId,
   );
 
-  if (mode === "managed" || (mode !== "model" && agentsUsable)) {
-    if (config && agentsUsable) return createAgentProvider(config);
-  }
   const transport = getModelTransport();
-  if (transport) return createModelProvider(transport);
+  if (mode === "managed") {
+    if (config && agentsUsable) return createAgentProvider(config);
+    throw new Error("Managed Agents are not configured.");
+  }
+  if (mode === "model") {
+    if (transport) return createModelProvider(transport);
+    throw new Error("Bailian model API is not configured.");
+  }
   if (config && agentsUsable) return createAgentProvider(config);
+  if (transport) return createModelProvider(transport);
   throw new Error("No Bailian planning transport is configured.");
 }
 
 export function planningTransportAvailability() {
   const config = getBailianConfig();
   return {
-    managedAgent: Boolean(config?.agentId && config?.environmentId && config?.flyaiVaultId),
+    managedAgent: Boolean(config?.agentId && config?.environmentId && config?.flyaiVaultId &&
+      config?.localInfoAgentId && config?.localInfoEnvironmentId && config?.composeAgentId &&
+      (config?.composeEnvironmentId || config?.insightEnvironmentId || config?.environmentId)),
+    mobilityAgent: Boolean(config?.mobilityAgentId && config?.mobilityEnvironmentId && config?.mobilityMcpServerId),
+    composeAgent: Boolean(config?.composeAgentId && (config?.composeEnvironmentId || config?.insightEnvironmentId || config?.environmentId)),
     localInfoAgent: Boolean(config?.localInfoAgentId && config?.localInfoEnvironmentId),
     insightAgent: Boolean(config?.insightAgentId && config?.insightEnvironmentId),
     modelApi: Boolean(getModelTransport()),

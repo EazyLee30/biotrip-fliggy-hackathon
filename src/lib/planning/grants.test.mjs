@@ -67,7 +67,7 @@ test("an undeclared grant is never copied in even when the data exists", () => {
 test("no stage declares a credential grant", () => {
   for (const policy of STAGE_POLICIES) {
     for (const grant of policy.grants) {
-      assert.ok(["trip", "preferences", "self_report", "health_metrics"].includes(grant),
+      assert.ok(["trip", "preferences", "self_report", "health_metrics", "itinerary"].includes(grant),
         `${policy.name} declares an unexpected grant ${grant}`);
     }
   }
@@ -75,7 +75,7 @@ test("no stage declares a credential grant", () => {
 
 test("advisory stages may degrade while required stages fail the plan", () => {
   const degradable = STAGE_POLICIES.filter((policy) => policy.degradable).map((policy) => policy.name).sort();
-  assert.deepEqual(plain(degradable), ["health_insight", "local_research"]);
+  assert.deepEqual(plain(degradable), ["compose_adjustments", "health_insight", "local_research", "mobility", "poi_catalog", "relief_inventory"]);
   for (const policy of STAGE_POLICIES) assert.equal(policy.degradable || policy.required, true);
   assert.equal(STAGE_BY_NAME.flyai_inventory.required, true);
   assert.equal(STAGE_BY_NAME.compose_plan.required, true);
@@ -107,4 +107,15 @@ test("a provider error keeps its identity and a raw error becomes a pipeline err
   const upstream = new Error("flyai rejected");
   upstream.code = "FLYAI_AUTH_ERROR";
   assert.equal(normalizePlannerError("flyai_inventory", "pipeline", upstream).code, "FLYAI_AUTH_ERROR");
+});
+
+test("relief and mobility receive only trip and scoped itinerary; composer cannot see raw metrics", () => {
+  const data = { ...gathered, itinerary: [{ id: "activity-test", name: "西湖", date: "2026-10-12", time: "14:00", fixed: false }] };
+  for (const stage of ["relief_inventory", "mobility"]) {
+    const input = buildStageInput(STAGE_BY_NAME[stage].grants, data);
+    assert.deepEqual(Object.keys(input).sort(), ["itinerary", "trip"]);
+    assert.equal(input.healthMetrics, undefined); assert.equal(input.selfReport, undefined);
+  }
+  const composer = buildStageInput(STAGE_BY_NAME.compose_adjustments.grants, data);
+  assert.ok(composer.itinerary); assert.ok(composer.selfReport); assert.equal(composer.healthMetrics, undefined);
 });

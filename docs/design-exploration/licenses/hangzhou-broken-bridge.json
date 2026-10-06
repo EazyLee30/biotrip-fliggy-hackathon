@@ -1,0 +1,50 @@
+{
+  "id": "hangzhou-broken-bridge",
+  "kind": "destination_photo",
+  "destination": "杭州",
+  "location": "西湖断桥",
+  "author": "Suicasmo",
+  "capturedAt": "2025-05-05",
+  "sourceUrl": "https://commons.wikimedia.org/wiki/File:Broken_Bridge_(Hangzhou)_20250505.jpg",
+  "sourceRevision": "1099075040",
+  "originalUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Broken_Bridge_%28Hangzhou%29_20250505.jpg",
+  "originalSha256": "3fa7a6403a47b329a1328d804a5e3753d89b3c422c0aeeadf57faaabbfb9b5f7",
+  "originalSha1": "45f41a96a78e98071ebb98636b4d65a992d108f1",
+  "expectedCommonsSha1": "45f41a96a78e98071ebb98636b4d65a992d108f1",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode.en",
+  "checkedOn": "2026-10-04",
+  "processing": "按原比例缩小，WebP 编码；未改变画面内容；交付副本不保留 EXIF",
+  "allowedUses": [
+    "website_destination_cover",
+    "share_cover",
+    "share_poster"
+  ],
+  "limitations": "地点实景照片，不证明营业状态、当前天气或商品实物；作者许可声明不代表商家或人物为 BioTrip 背书。",
+  "derivatives": [
+    {
+      "path": "/destinations/hangzhou-broken-bridge-1280.webp",
+      "bytes": 81874,
+      "sha256": "17642a92b33bd6ef820c652b6133ef61d4755d825ea73b04b7f406e17ddcdb88",
+      "width": 1280,
+      "height": 853
+    },
+    {
+      "path": "/destinations/hangzhou-broken-bridge-640.webp",
+      "bytes": 24026,
+      "sha256": "0f4047c310015106cb3eab20d466e2a7d56d0a1ec75727f8487aa6af5ae58a6c",
+      "width": 640,
+      "height": 427
+    }
+  ],
+  "archivedEvidence": [
+    {
+      "path": "docs/design-exploration/licenses/hangzhou-broken-bridge-source.html",
+      "sha256": "d47115b1c77c2316c47756624ce733c09afe8bd92a0d93503a9296abf9bc1d28"
+    },
+    {
+      "path": "docs/design-exploration/licenses/cc0-1.0-legalcode.html",
+      "sha256": "b43732f4c1463b087cf10d4daf8d8766514b2bf8f21bc5ef50905f95be227726"
+    }
+  ]
+}

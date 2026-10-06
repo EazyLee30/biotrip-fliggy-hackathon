@@ -34,16 +34,19 @@ export function ProvenanceBlock({
   if (!provenance && !memoryNotes?.length) return null;
   const stages = provenance?.stages ?? [];
   const degraded = stages.filter((stage) => stage.status === "degraded");
-  const providerLabel = provenance?.provider === "managed_agent" ? "百炼托管智能体" : "百炼模型接口";
+  const providerLabel = provenance?.provider === "managed_agent" ? "百炼托管智能体" : provenance ? "百炼模型接口" : "生成记录";
   const flyai = provenance?.flyai;
   const localVerified = provenance?.local.verified;
 
   return (
     <section className={styles.card} aria-label="资料来源与核验状态">
-      <div className={styles.sectionHead}>
+      <details className={styles.advancedDetails}>
+      <summary>
         <span><Icon name="shield" /><strong>资料来源与核验</strong></span>
-        <small>{providerLabel}</small>
-      </div>
+        <small>{flyai?.sourceCount ?? 0} 条飞猪来源 · 查看详情</small>
+      </summary>
+      <div>
+      <p className={styles.note}>{providerLabel}</p>
 
       {provenance && (
         <div className={styles.summaryList}>
@@ -52,7 +55,7 @@ export function ProvenanceBlock({
               <span><Icon name={STAGE_ICONS[stage.stage] ?? "leaf"} size={14} />{stage.label}</span>
               <strong>
                 {stage.status === "ok"
-                  ? `已核验 · ${(stage.elapsedMs / 1000).toFixed(1)}s`
+                  ? `${["health_insight", "compose_plan"].includes(stage.stage) ? "已完成" : "已核验来源"} · ${(stage.elapsedMs / 1000).toFixed(1)} 秒`
                   : stage.status === "skipped" ? "本次未使用" : "本次未核验"}
               </strong>
             </div>
@@ -66,7 +69,7 @@ export function ProvenanceBlock({
           {localVerified !== undefined && (
             <div className={styles.summaryRow}>
               <span><Icon name="compass" size={14} />目的地公开资料</span>
-              <strong>{localVerified ? "已核验来源链接" : "本次未核验"}</strong>
+              <strong>{localVerified ? "已核验来源链接" : stages.some((stage) => stage.stage === "local_research" && stage.status === "skipped") ? "本次未请求" : "本次未核验"}</strong>
             </div>
           )}
           {flyai && (
@@ -81,6 +84,10 @@ export function ProvenanceBlock({
               <strong>{flyai.executor === "agent_skill" ? "百炼智能体内置 FlyAI Skill" : "BioTrip 服务端只读签名通道"}</strong>
             </div>
           )}
+          {flyai?.compositionSourceCount !== undefined && <div className={styles.summaryRow}>
+            <span><Icon name="compass" size={14} />行程编排参考</span>
+            <strong>{flyai.compositionSourceCount} 条候选 · {flyai.recommendedSourceCount ?? 0} 条商品推荐</strong>
+          </div>}
         </div>
       )}
 
@@ -89,7 +96,7 @@ export function ProvenanceBlock({
           <Icon name="clock" />
           <div>
             <strong>部分资料本次未核验</strong>
-            <p>{degraded.map((stage) => `${stage.label}未核验`).join("、")}。行程已按其余已核验来源编排，相关内容请自行确认。</p>
+            <p>{degraded.map((stage) => stage.reason || `${stage.label}本次未完成`).join("；")}。行程已按可用资料编排，相关内容请自行确认。</p>
           </div>
         </div>
       )}
@@ -119,6 +126,13 @@ export function ProvenanceBlock({
           ))}
         </div>
       )}
+      </div>
+      </details>
+      <p className={styles.note} role={degraded.length || provenance?.health.whoopUnavailable ? "status" : undefined}>
+        {flyai?.executor === "agent_skill" ? "飞猪 Agent 搜索" : flyai?.executor === "worker" ? "飞猪后台签名搜索" : "查看来源详情"}
+        {degraded.length > 0 ? " · 部分资料未核验" : " · 生成已完成"}
+        {provenance?.health.whoopUnavailable ? " · WHOOP 需重新连接" : ""}
+      </p>
     </section>
   );
 }
@@ -132,7 +146,7 @@ export function ProvenanceChip({ provenance }: { provenance?: JourneyProvenance 
     <small className={styles.note}>
       <Icon name={allVerified ? "check" : "clock"} size={13} />
       {allVerified
-        ? `全部资料已核验 · ${provenance.flyai.sourceCount} 条飞猪来源`
+        ? `生成已完成 · ${provenance.flyai.sourceCount} 条飞猪来源`
         : `${degraded} 项资料本次未核验`}
     </small>
   );

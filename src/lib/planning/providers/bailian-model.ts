@@ -1,8 +1,12 @@
 import { readBoundedUpstream } from "@/lib/upstream-response";
 import { parseJsonText, parsePlan, safeHttpsUrl } from "@/lib/bailian-output";
 import { searchFlyai, type FlyaiSource } from "@/lib/flyai";
+import { transportCityFor } from "@/lib/places";
+import { adjustmentPrompt, reliefQueries } from "../adjust-prompts";
+import { abstractHealth } from "../adjust-health";
 import { composePlanPrompt, healthInsightPrompt, localResearchPrompt } from "../prompts";
 import { composedPlanSchema } from "../schema";
+import { validateComposedPlan } from "../validation";
 import {
   PlannerError,
   type ComposedPlan,
@@ -97,37 +101,40 @@ async function modelRequest(
   return { value, requestId };
 }
 
-function parseLocalServices(text: string, sourceUrls: string[]): LocalService[] {
+function parseLocalServices(text: string, sourceUrls: string[]): Pick<LocalResearch, "services" | "unverifiedCount"> {
   const parsed = parseJsonText(text);
   if (!Array.isArray(parsed.services)) {
     throw new ModelRequestError(502, "INVALID_LOCAL_INFORMATION");
   }
   const verified = new Set(sourceUrls);
-  return parsed.services.filter(record).slice(0, 6).map((item) => {
+  let unverifiedCount = 0;
+  const services = parsed.services.filter(record).slice(0, 6).map((item) => {
     const sourceUrl = safeHttpsUrl(item.source_url);
     // A source URL the search tool never returned is a fabrication, not a result.
     if (!sourceUrl || !verified.has(sourceUrl) || typeof item.name !== "string" ||
-      typeof item.kind !== "string" || typeof item.detail !== "string" || typeof item.source !== "string") return null;
+      typeof item.kind !== "string" || typeof item.detail !== "string" || typeof item.source !== "string") {
+      unverifiedCount += 1;
+      return null;
+    }
     return {
       name: item.name.slice(0, 180), kind: item.kind.slice(0, 80),
       detail: item.detail.slice(0, 500), source: item.source.slice(0, 160), sourceUrl,
     };
   }).filter((item): item is LocalService => item !== null);
+  return { services, unverifiedCount };
 }
 
 /**
- * Plain Bailian model API provider. Cheaper and faster than Managed Agents and
- * used as the fallback transport; the competition's required Managed Agents
- * path lives in `bailian-agent.ts` behind the same interface.
+ * Plain Bailian model API provider. Selected explicitly, or when auto mode has
+ * no complete Managed Agent configuration. Runtime errors never silently
+ * restart the whole planning pipeline through another provider.
  */
 export function createModelProvider(transport: ModelTransport): PlanningProvider {
   const chat = async (instructions: string, input: unknown, signal: AbortSignal, timeoutMs = 45_000) => {
     const { value, requestId } = await modelRequest(transport, "chat/completions", {
-      model: transport.model, reasoning_effort: "none", enable_thinking: false,
+      model: transport.model, reasoning_effort: "none", enable_thinking: false, max_completion_tokens: 700,
       messages: [{ role: "system", content: instructions }, { role: "user", content: JSON.stringify(input) }],
-      response_format: /^qwen3\.(?:7|8)-/.test(transport.model)
-        ? { type: "json_schema", json_schema: { name: "biotrip_plan", strict: true, schema: composedPlanSchema(1) } }
-        : { type: "json_object" },
+      response_format: { type: "json_object" },
     }, signal, timeoutMs);
     const choice = (Array.isArray(value.choices) ? value.choices.filter(record) : [])[0];
     const message = choice && record(choice.message) ? choice.message : null;
@@ -151,6 +158,7 @@ export function createModelProvider(transport: ModelTransport): PlanningProvider
         throw new ModelRequestError(502, "INVALID_HEALTH_INSIGHT");
       }
       return {
+        ...abstractHealth(parsed),
         walkingPace: pace as HealthInsight["walkingPace"],
         breakFrequency: breaks as HealthInsight["breakFrequency"],
         sensoryFilters: Array.isArray(parsed.sensory_filters)
@@ -200,7 +208,7 @@ export function createModelProvider(transport: ModelTransport): PlanningProvider
       // No completed search means nothing was verified, so the stage degrades
       // rather than presenting model recall as a source.
       if (!searches || !text) throw new ModelRequestError(502, "NO_VERIFIED_WEB_SEARCH", requestId);
-      return { services: parseLocalServices(text, [...sources]), searches };
+      return { ...parseLocalServices(text, [...sources]), searches };
     },
 
     /**
@@ -208,7 +216,21 @@ export function createModelProvider(transport: ModelTransport): PlanningProvider
      * the search signature never depends on a Vault placeholder.
      */
     async flyaiInventory(ctx: StageContext): Promise<FlyaiInventory> {
-      return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate);
+      return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate, ctx.inventoryAvailable);
+    },
+
+    async reliefInventory(ctx) {
+      const queries = reliefQueries(ctx);
+      const results = await Promise.allSettled(queries.map(query => searchFlyai("fliggy_fast_search", { query: query.query }, ctx.signal, query.category)));
+      ctx.signal.throwIfAborted();
+      const sources = results.flatMap(result => result.status === "fulfilled" ? result.value.sources : []).slice(0, 24);
+      if (!sources.length) throw new PlannerError("relief_inventory", "search", 502, "NO_VERIFIED_FLYAI_SOURCE", null, true);
+      return { sources, searches: queries.length, failedSearches: results.filter(result => result.status === "rejected").length,
+        failedCategories: results.flatMap((result, index) => result.status === "rejected" || !result.value.sources.length ? [queries[index].category] : []), executor: "worker" };
+    },
+
+    async composeAdjustments(ctx, gathered) {
+      return parseJsonText(await chat(adjustmentPrompt(ctx, gathered), {}, ctx.signal));
     },
 
     async composePlan(ctx: StageContext, gathered: GatheredResults): Promise<ComposedPlan> {
@@ -231,7 +253,7 @@ export function createModelProvider(transport: ModelTransport): PlanningProvider
       const plan = parsePlan(message.content, ctx.fixedItems);
       // An out-of-range index is a fabrication; a well-formed link we never
       // retrieved is simply dropped rather than shown.
-      return { ...plan, places: bindPlaces(message.content, gathered.inventory.sources, requestId) };
+      return validateComposedPlan(bindPlanPlaces(plan, message.content, gathered.inventory.sources, requestId), ctx);
     },
   };
 }
@@ -243,26 +265,44 @@ function selfReportBasis(ctx: StageContext): HealthBasis {
 
 /**
  * Binds each place to a real retrieved source. Runs on the raw model output
- * because `parsePlan` normalises places and drops the model's `source_index`.
+ * because `parsePlan` normalises places and drops raw source references. The
+ * index and original name must identify the same FlyAI item, so a local-service
+ * index cannot silently attach its explanation to an unrelated product.
  */
 export function bindPlaces(text: string, sources: FlyaiSource[], requestId: string | null = null): ComposedPlan["places"] {
   const parsed = parseJsonText(text);
   const body = record(parsed.plan) ? parsed.plan : parsed;
   if (!Array.isArray(body.places)) throw new ModelRequestError(502, "INVALID_TRAVEL_PLAN", requestId);
-  return body.places.filter(record).map((place) => {
+  return body.places.flatMap((place) => {
+    if (!record(place)) throw new ModelRequestError(502, "INVALID_PLACE_REFERENCE", requestId);
     const index = place.source_index;
-    if (!Number.isInteger(index) || typeof place.reason !== "string") {
+    if (!Number.isInteger(index) || typeof place.source_name !== "string" || typeof place.reason !== "string") {
       throw new ModelRequestError(502, "INVALID_PLACE_REFERENCE", requestId);
     }
     const source = sources[index as number];
     // An index outside the retrieved set is a fabrication, not a recommendation.
     if (!source) throw new ModelRequestError(502, "UNVERIFIED_SOURCE_URL", requestId);
-    return {
+    // Never attach a mismatched explanation to a real product. Omit this optional
+    // recommendation; the validated itinerary can still be saved.
+    if (place.source_name !== source.name) return [];
+    return [{
       name: source.name, category: source.category,
       source: "飞猪实时搜索", url: source.url,
+      ...(source.imageUrl ? { imageUrl: source.imageUrl } : {}),
       reason: place.reason.slice(0, 400),
-    };
+    }];
   }).slice(0, 8) as ComposedPlan["places"];
+}
+
+/** Optional product mismatches are disclosed without rebinding or a second model call. */
+export function bindPlanPlaces(plan: ComposedPlan, text: string, sources: FlyaiSource[], requestId: string | null = null): ComposedPlan {
+  const places = bindPlaces(text, sources, requestId);
+  const parsed = parseJsonText(text);
+  const body = record(parsed.plan) ? parsed.plan : parsed;
+  const omitted = Array.isArray(body.places) ? body.places.length - places.length : 0;
+  return { ...plan, places, adjustments: omitted > 0
+    ? [...plan.adjustments, `已移除 ${omitted} 条未通过来源核验或超出展示数量的商品推荐，仅展示已核验商品。`]
+    : plan.adjustments };
 }
 
 /**
@@ -274,10 +314,12 @@ export async function flyaiInventory(
   signal: AbortSignal,
   trip: StageContext["input"]["trip"] & object,
   arrivalDate: string,
+  onVerified?: StageContext["inventoryAvailable"],
 ): Promise<FlyaiInventory> {
   const services = trip.requestedServices;
   const searches: Promise<{ sources: FlyaiSource[] }>[] = [];
   const categories: string[] = [];
+  const unavailable: string[] = [];
   const requests = [
     { key: "hotels", label: "酒店", category: "住宿" },
     { key: "attractions", label: "景点门票", category: "景点与体验" },
@@ -289,19 +331,29 @@ export async function flyaiInventory(
     searches.push(searchFlyai("fliggy_fast_search", { query: `${trip.destinationCity} ${arrivalDate} ${service.label}` }, signal, service.category));
   }
   if (services.includes("flights")) {
-    categories.push("航班");
-    searches.push(searchFlyai("search_flight", {
-      origin: trip.originCity, destination: trip.destinationCity,
-      depDate: trip.departureDate,
-      ...(trip.returnDate ? { backDate: trip.returnDate } : {}),
-      limit: 5,
-    }, signal, "航班"));
+    const origin = transportCityFor(trip.originCity);
+    const destination = transportCityFor(trip.destinationCity);
+    if (origin && destination && origin !== destination) {
+      categories.push("航班");
+      searches.push(searchFlyai("search_flight", {
+        origin, destination,
+        depDate: trip.departureDate,
+        ...(trip.returnDate ? { backDate: trip.returnDate } : {}),
+        limit: 5,
+      }, signal, "航班"));
+    } else unavailable.push(origin && origin === destination ? "航班（出发地与目的地位于同一交通城市）" : "航班（区域尚未确定交通城市）");
   }
   if (!searches.length) {
     categories.push("景点与体验");
     searches.push(searchFlyai("fliggy_fast_search", { query: `${trip.destinationCity} 景点门票` }, signal, "景点与体验"));
   }
-  const results = await Promise.allSettled(searches);
+  const results = await Promise.allSettled(searches.map(async search => {
+    const result = await search;
+    if (!signal.aborted && result.sources.length && onVerified) {
+      try { onVerified(result.sources); } catch { /* Preview delivery is optional. */ }
+    }
+    return result;
+  }));
   const successes = results.filter((result): result is PromiseFulfilledResult<{ sources: FlyaiSource[] }> => result.status === "fulfilled");
   if (!successes.length) {
     const failure = results.find((result) => result.status === "rejected");
@@ -311,11 +363,12 @@ export async function flyaiInventory(
   for (const result of successes) {
     for (const source of result.value.sources) if (sources.size < 30) sources.set(source.url, source);
   }
+  if (!sources.size) throw new PlannerError("flyai_inventory", "flyai_search", 502, "NO_VERIFIED_FLYAI_SOURCE");
   return {
     sources: [...sources.values()],
     searches: results.length,
-    failedSearches: results.length - successes.length,
-    failedCategories: results.flatMap((result, index) => result.status === "rejected" ? [categories[index]] : []),
+    failedSearches: results.filter((result) => result.status === "rejected" || !result.value.sources.length).length,
+    failedCategories: [...unavailable, ...results.flatMap((result, index) => result.status === "rejected" || !result.value.sources.length ? [categories[index]] : [])],
     executor: "worker",
   };
 }

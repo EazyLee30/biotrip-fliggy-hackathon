@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import Image from "next/image";
+import { beginSheetDrag, moveSheetDrag, shouldDismissSheet, type SheetDrag } from "./planner/sheet-gesture";
+import { COURTYARD_ASSET } from "@/lib/visual-assets";
 import styles from "./zen-dashboard.module.css";
 
 export type IconName = "sun" | "moon" | "leaf" | "compass" | "person" | "tune" | "pin" | "arrow" | "back" | "close" | "check" | "lock" | "clock" | "heart" | "pulse" | "walk" | "train" | "cup" | "wind" | "calendar" | "sync" | "shield" | "plus" | "food" | "bed" | "forest" | "pause" | "play" | "share" | "trash" | "edit";
@@ -45,28 +47,161 @@ export function Gauge({ value, label = "恢复" }: { value: number | null | unde
   return <div className={styles.gauge} aria-label={score === null ? `${label}暂无数据` : `${label}${score}%`}><svg viewBox="0 0 72 72"><circle cx="36" cy="36" r="30" fill="none" stroke="#e1e8fd" strokeWidth="5" /><circle cx="36" cy="36" r="30" fill="none" stroke="#006948" strokeWidth="5" strokeLinecap="round" strokeDasharray="188.5" strokeDashoffset={188.5 * (1 - (score ?? 0) / 100)} /></svg><div><strong>{score === null ? "—" : Math.round(score)}{score === null ? null : <small>%</small>}</strong><span>{label}</span></div></div>;
 }
 export function Ambience({ image = "forest", title, label }: { image?: "forest" | "retreat" | "tea" | "sleep"; title?: string; label?: string }) {
-  return <div className={styles.ambience}><Image src={`/zen/${image}.jpg`} alt="静谧庭院的旅行氛围图" fill sizes="(max-width: 600px) 100vw, 600px" /><div>{label ? <span>{label}</span> : null}{title ? <strong>{title}</strong> : null}</div></div>;
+  const key = image === "retreat" ? "courtyard" : image === "sleep" ? "rest" : image;
+  const alt = key === "courtyard" ? COURTYARD_ASSET.alt : key === "forest" ? "晨光下的自然步道，生成的旅行氛围图" : key === "tea" ? "窗边的一杯茶与木桌，生成的旅行氛围图" : "窗边的休息角落，生成的旅行氛围图";
+  return <div className={styles.ambience}><Image src={`/ambience/${key}-1280.webp`} alt={alt} fill sizes="(max-width: 600px) 100vw, 600px" /><div>{label ? <span>{label}</span> : null}{title ? <strong>{title}</strong> : null}</div></div>;
 }
-export function Modal({ title, children, onClose, busy = false }: { title: string; children: ReactNode; onClose: () => void; busy?: boolean }) {
+export type ModalProps = { title: string; children: ReactNode; onClose: () => void; busy?: boolean; footer?: ReactNode };
+
+const activeSheetHistory = new Set<string>();
+let sheetNavigationInProgress = false;
+let sheetNavigationPromise: Promise<void> | null = null;
+function popSheetHistoryEntry(): Promise<void> {
+  if (sheetNavigationPromise) return sheetNavigationPromise;
+  sheetNavigationInProgress = true;
+  sheetNavigationPromise = new Promise<void>(resolve => {
+    window.addEventListener("popstate", () => resolve(), { once: true, capture: true });
+    window.history.back();
+  }).finally(() => { sheetNavigationInProgress = false; sheetNavigationPromise = null; });
+  return sheetNavigationPromise;
+}
+/** Finish sheet history removal before an async account save can open another page. */
+export async function dismissSheetsBeforeNavigation(): Promise<void> {
+  if (sheetNavigationPromise) await sheetNavigationPromise;
+  while (window.history.state?.biotripSheet) await popSheetHistoryEntry();
+}
+
+export function Modal({ title, children, onClose, busy = false, footer }: ModalProps) {
+  const historyToken = useId();
   const ref = useRef<HTMLDivElement>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<SheetDrag | null>(null);
+  const hasFooter = footer !== undefined && footer !== null && footer !== false;
+  const closeFromKeyboard = useEffectEvent(() => { if (!busy) onClose(); });
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    const oldOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    ref.current?.focus();
+    const dialog = ref.current;
+    if (!dialog) return;
+    const currentHistory = window.history.state;
+    if (!currentHistory?.biotripSheet && currentHistory?.biotripNavigation) {
+      currentHistory.biotripNavigation = { ...currentHistory.biotripNavigation, top: window.scrollY };
+      window.history.replaceState(currentHistory, "");
+    }
+    const historyEntry = { ...currentHistory, biotripSheet: historyToken };
+    const previousToken = currentHistory?.biotripSheet as string | undefined;
+    const replaceClosedSheet = previousToken && !activeSheetHistory.has(previousToken);
+    activeSheetHistory.add(historyToken);
+    if (previousToken !== historyToken) window.history[replaceClosedSheet ? "replaceState" : "pushState"](historyEntry, "");
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const body = document.body, root = document.documentElement;
+    const scrollX = window.scrollX, scrollY = window.scrollY;
+    const previousBody = { overflow: body.style.overflow, position: body.style.position, top: body.style.top, left: body.style.left, width: body.style.width, paddingRight: body.style.paddingRight };
+    const previousRootOverflow = root.style.overflow;
+    const scrollbar = Math.max(0, window.innerWidth - root.clientWidth);
+    body.style.overflow = "hidden"; body.style.position = "fixed";
+    body.style.top = `${-scrollY}px`; body.style.left = `${-scrollX}px`; body.style.width = "100%";
+    if (scrollbar) body.style.paddingRight = `${(Number.parseFloat(window.getComputedStyle(body).paddingRight) || 0) + scrollbar}px`;
+    root.style.overflow = "hidden";
+    dialog.focus({ preventScroll: true });
+    const nodes = () => Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')).filter((node) => node.getClientRects().length > 0 && !node.closest("[inert]"));
+    const isTopDialog = () => Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')).filter((node) => node.getClientRects().length > 0 && !node.closest("[inert]")).at(-1) === dialog;
     const listener = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
+      if (!isTopDialog() || event.defaultPrevented) return;
+      if (event.key === "Escape") { event.preventDefault(); closeFromKeyboard(); return; }
       if (event.key !== "Tab") return;
-      const nodes = ref.current?.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]');
-      if (!nodes?.length) { event.preventDefault(); return; }
-      const first = nodes[0], last = nodes[nodes.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      const list = nodes(), first = list[0], last = list.at(-1);
+      if (!first || !last) { event.preventDefault(); dialog.focus(); return; }
+      const current = document.activeElement;
+      if (event.shiftKey && (current === first || current === dialog || !dialog.contains(current))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (current === last || !dialog.contains(current))) { event.preventDefault(); first.focus(); }
+    };
+    const popstate = (event: PopStateEvent) => {
+      // Returning from a nested sheet leaves this sheet open.
+      if (sheetNavigationInProgress || !isTopDialog() || event.state?.biotripSheet === historyToken) return;
+      event.stopImmediatePropagation();
+      closeFromKeyboard();
+      // Unsaved-change or busy guards may keep the sheet mounted.
+      window.setTimeout(() => {
+        if (dialog.isConnected && activeSheetHistory.has(historyToken)) window.history.pushState(historyEntry, "");
+      }, 0);
+    };
+    window.addEventListener("popstate", popstate, true);
+    const focusin = (event: FocusEvent) => {
+      if (isTopDialog() && event.target instanceof Node && !dialog.contains(event.target)) (nodes()[0] ?? dialog).focus({ preventScroll: true });
     };
     document.addEventListener("keydown", listener);
-    return () => { document.body.style.overflow = oldOverflow; document.removeEventListener("keydown", listener); previous?.focus(); };
-  }, [busy, onClose]);
-  return <div className={styles.modalBackdrop} onClick={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}><div className={styles.modal} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}><div className={styles.sectionHead}><h2>{title}</h2><button className={styles.iconButton} aria-label="关闭" disabled={busy} onClick={onClose}><Icon name="close" /></button></div>{children}</div></div>;
+    document.addEventListener("focusin", focusin);
+    return () => {
+      activeSheetHistory.delete(historyToken);
+      window.removeEventListener("popstate", popstate, true);
+      window.setTimeout(() => {
+        if (!sheetNavigationInProgress && !activeSheetHistory.has(historyToken) && window.history.state?.biotripSheet === historyToken) void popSheetHistoryEntry();
+      }, 0);
+      document.removeEventListener("keydown", listener); document.removeEventListener("focusin", focusin);
+      Object.assign(body.style, previousBody); root.style.overflow = previousRootOverflow;
+      const oldBehavior = root.style.scrollBehavior; root.style.scrollBehavior = "auto";
+      window.scrollTo(scrollX, scrollY); root.style.scrollBehavior = oldBehavior;
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
+    };
+  }, [historyToken]);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    let frame = 0;
+    const update = () => {
+      backdrop.current?.style.setProperty("--modal-viewport-height", `${viewport.height}px`);
+      backdrop.current?.style.setProperty("--modal-viewport-top", `${viewport.offsetTop}px`);
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const active = document.activeElement, scroller = bodyRef.current;
+        if (!(active instanceof HTMLElement) || !scroller?.contains(active)) return;
+        const area = scroller.getBoundingClientRect(), field = active.getBoundingClientRect();
+        if (field.bottom > area.bottom - 16) scroller.scrollTop += field.bottom - area.bottom + 16;
+        else if (field.top < area.top + 16) scroller.scrollTop += field.top - area.top - 16;
+      });
+    };
+    update(); viewport.addEventListener("resize", update); viewport.addEventListener("scroll", update);
+    return () => { viewport.removeEventListener("resize", update); viewport.removeEventListener("scroll", update); window.cancelAnimationFrame(frame); };
+  }, []);
+  useEffect(() => {
+    if (!busy) return;
+    drag.current = null;
+    ref.current?.style.setProperty("--modal-offset", "0px");
+    if (ref.current) delete ref.current.dataset.dragging;
+  }, [busy]);
+  function resetDrag() {
+    drag.current = null;
+    ref.current?.style.setProperty("--modal-offset", "0px");
+    if (ref.current) delete ref.current.dataset.dragging;
+  }
+  function startDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (busy || !event.isPrimary || event.button !== 0 || !window.matchMedia("(max-width: 699px)").matches) return;
+    drag.current = beginSheetDrag(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (ref.current) ref.current.dataset.dragging = "true";
+  }
+  function moveDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (busy) { resetDrag(); return; }
+    if (drag.current?.pointerId !== event.pointerId) return;
+    drag.current = moveSheetDrag(drag.current, event.clientX, event.clientY, event.timeStamp);
+    ref.current?.style.setProperty("--modal-offset", `${drag.current.offset}px`);
+  }
+  function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (drag.current?.pointerId !== event.pointerId) return;
+    const final = moveSheetDrag(drag.current, event.clientX, event.clientY, event.timeStamp);
+    const dismiss = !busy && shouldDismissSheet(final, ref.current?.getBoundingClientRect().height ?? 0);
+    resetDrag();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (dismiss) onClose();
+  }
+  return <div className={styles.modalBackdrop} ref={backdrop} onClick={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <div className={`${styles.modal} ${hasFooter ? styles.modalWithFooter : ""}`} role="dialog" aria-modal="true" aria-label={title} aria-busy={busy} tabIndex={-1} ref={ref}>
+      <div className={styles.modalHandle} aria-hidden="true" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={resetDrag} onLostPointerCapture={resetDrag}><span /></div>
+      <div className={styles.modalHeader}><h2>{title}</h2><button type="button" className={styles.iconButton} aria-label="关闭" disabled={busy} onClick={() => { if (!busy) onClose(); }}><Icon name="close" /></button></div>
+      <div className={styles.modalBody} ref={bodyRef}>{children}</div>
+      {hasFooter ? <div className={styles.modalFooter}>{footer}</div> : null}
+    </div>
+  </div>;
 }
 export function BreathingSession({ restingHeartRate, onComplete }: { restingHeartRate: number | null | undefined; onComplete: (completed: boolean) => void }) {
   const [elapsed, setElapsed] = useState(0);
@@ -112,6 +247,6 @@ export function BreathingSession({ restingHeartRate, onComplete }: { restingHear
     <section className={styles.card}><div className={styles.sectionHead}><h3>旅途中的 3 分钟</h3><Icon name="wind" /></div><p>找一个舒服的坐姿，跟随圆环轻轻吸气 4 秒、呼气 6 秒。保持自然，不必用力；需要时随时暂停。</p><div className={styles.sectionHead}><small>练习进度</small><strong>{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")} / 03:00</strong></div><div className={styles.progress}><i style={{ width: `${elapsed / 1.8}%` }} /></div></section>
     <section className={styles.card}><div className={styles.sectionHead}><h3>感官辅助</h3><small>按你的喜好</small></div><div className={styles.twoColumns}><button className={`${styles.option} ${sound ? styles.selected : ""}`} aria-pressed={sound} onClick={() => void toggleSound()}><Icon name="wind" /><strong>轻柔背景音</strong><small>{sound ? "已开启 · 点击关闭" : "点击开启"}</small></button><button className={`${styles.option} ${haptic ? styles.selected : ""}`} aria-pressed={haptic} onClick={() => setHaptic(!haptic)}><Icon name="pulse" /><strong>节奏触感</strong><small>{haptic ? "已开启 · 支持振动的设备生效" : "每轮开始时轻轻振动"}</small></button></div></section>
     {!complete ? <button className={styles.secondaryButton} onClick={() => setRunning(!running)}><Icon name={running ? "pause" : "play"} />{running ? "暂停练习" : "继续练习"}</button> : null}
-    <button className={styles.primaryButton} onClick={() => onComplete(complete)}><Icon name="check" />{complete ? "完成并返回今日行程" : "结束并返回今日行程"}</button>
+    <button className={styles.primaryButton} onClick={() => onComplete(complete)}><Icon name="check" />{complete ? "完成并返回" : "结束并返回"}</button>
   </div>;
 }

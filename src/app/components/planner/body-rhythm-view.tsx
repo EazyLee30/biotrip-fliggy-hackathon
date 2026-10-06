@@ -1,0 +1,36 @@
+"use client";
+import type * as React from "react";
+import type { SetStateAction } from "react";
+import type { PlannerInputs, TripForm } from "./use-planner-inputs";
+import type { Journey, JourneyDraft, JourneyGeneratedPlan, JourneyFeedback } from "@/lib/journey-types";
+import type { AppView, NavigationIntent } from "./app-navigation";
+import styles from "../zen-dashboard.module.css";
+import { Icon, Badge, Ambience } from "../zen-ui";
+import { ReservationEditor } from "./reservation-editor";
+import { QuickRating, PhraseInput } from "./quick-inputs";
+import { AMBIENCE, toggle } from "./view-values";
+import { clearPendingReservations } from "./pending-reservations";
+
+type Props = Pick<PlannerInputs, "intention" | "setIntention" | "form" | "fatigue" | "setFatigue" | "setConsent" | "stress" | "setStress" | "bodyFeedback" | "setBodyFeedback" | "moodFeedback" | "setMoodFeedback" | "ambient" | "setAmbient" | "includeWhoop" | "setIncludeWhoop"> & {
+  plan: JourneyGeneratedPlan | null;
+  renderMetrics: () => React.JSX.Element;
+  renderWhoopStatus: () => React.JSX.Element;
+  navigate: (next: AppView, intent?: NavigationIntent) => Promise<void>;
+  newJourney: () => Promise<void>;
+  feedbackHistory: JourneyFeedback[];
+  journey: Journey | null;
+  reservationRange: { start: string; end: string; };
+  loading: boolean;
+  busy: boolean;
+  update: <K extends keyof TripForm>(key: K, value: TripForm[K]) => void;
+  setError: React.Dispatch<SetStateAction<string>>;
+  whoopConnected: boolean;
+  readyToPlan: boolean;
+  openPlanningConsent: () => void;
+  previousPlan: JourneyGeneratedPlan | null;
+  fillDraft: (draft: JourneyDraft) => void;
+};
+export function BodyRhythmView({ plan, renderMetrics, renderWhoopStatus, navigate, newJourney, feedbackHistory, journey, intention, setIntention, form, reservationRange, loading, busy, update, setError, fatigue, setFatigue, setConsent, stress, setStress, bodyFeedback, setBodyFeedback, moodFeedback, setMoodFeedback, ambient, setAmbient, whoopConnected, includeWhoop, setIncludeWhoop, readyToPlan, openPlanningConsent, previousPlan, fillDraft }: Props) {
+    if (!plan) return <div className={styles.stack}><section className={styles.card}><h2>先照顾好当下。</h2>{renderMetrics()}{renderWhoopStatus()}<button className={styles.secondaryButton} onClick={() => navigate("breathing")}><Icon name="wind" />做一次舒缓呼吸</button></section><div className={`${styles.card} ${styles.empty}`}><Icon name="tune" /><h2>从一段真实的旅程开始。</h2><p>生成行程后，随时根据自己的感受调整当天的安排。</p><button className={styles.primaryButton} onClick={newJourney}>创建旅程 <Icon name="arrow" /></button></div></div>;
+    return <div className={styles.stack}><section className={styles.card}><div className={styles.sectionHead}><h2>身体记录与节奏</h2><Badge tone="muted">由你决定</Badge></div>{renderMetrics()}{renderWhoopStatus()}{feedbackHistory.length ? <details className={styles.journeyNotes}><summary>最近的旅行感受</summary>{feedbackHistory.slice(0,3).map((entry) => <p key={entry.id}>{entry.note || entry.bodyFeedback || entry.moodFeedback || "已记录本次自评"}</p>)}</details> : null}</section><div className={styles.pageIntro}><span className={styles.eyebrow}><Icon name="tune" size={16} />跟随当下的身体节奏</span><h1>让行程，舒服一点。</h1><p>告诉我现在的感觉。固定安排会一起纳入规划，新方案生成后先由你确认，再更新这段旅程。</p></div><div className={styles.successBanner}><Icon name="leaf" /><div><strong>{journey?.status === "completed" ? "这段旅程已完成" : "保留重要安排，重新整理节奏"}</strong><p>{plan.plan.itinerary.filter((item) => item.fixed).length} 个固定安排 · {plan.plan.itinerary.filter((item) => !item.fixed).length} 个灵活节点</p></div></div><div className={styles.wideGrid}><section className={styles.card}><div className={styles.sectionHead}><h3>现在想怎样安排？</h3><Badge tone="mint">主观自评</Badge></div><div className={styles.segmented}><button className={intention === "安静恢复" ? styles.active : ""} onClick={() => setIntention("安静恢复")}><Icon name="leaf" size={16} />慢下来</button><button className={intention === "慢慢探索" ? styles.active : ""} onClick={() => setIntention("慢慢探索")}><Icon name="compass" size={16} />继续探索</button></div><ReservationEditor value={form.itineraryText} tripStart={reservationRange.start} tripEnd={form.returnDate ? reservationRange.end : ""} disabled={loading || busy || journey?.status === "completed"} onChange={(next) => { update("itineraryText", next); setError(""); }} /><p className={styles.note}>预约调整暂存在当前标签页，确认采用新方案后保存到账户。返回时选择保留当前行程会撤销调整。</p><div className={styles.ratingColumns}><QuickRating label="身体疲劳" value={fatigue} onChange={(next) => { setFatigue(next); setConsent(false); }} lowLabel="很轻" highLabel="明显" disabled={loading || busy} /><QuickRating label="主观压力" value={stress} onChange={(next) => { setStress(next); setConsent(false); }} lowLabel="很低" highLabel="很高" disabled={loading || busy} /></div><PhraseInput label="身体感受" value={bodyFeedback} onChange={(next) => { setBodyFeedback(next); setConsent(false); }} phrases={["减少步行", "找地方坐下休息", "提前回住宿"]} maxLength={80} rows={2} placeholder="补充现在的身体感受" disabled={loading || busy} /><PhraseInput label="心情与兴趣" value={moodFeedback} onChange={(next) => { setMoodFeedback(next); setConsent(false); }} phrases={["安静的展馆", "公园散步", "当地美食"]} maxLength={80} rows={2} placeholder="也可以写下其他兴趣" disabled={loading || busy} /><div className={styles.chipRow}>{AMBIENCE.map((item) => <button className={`${styles.chip} ${ambient.includes(item) ? styles.active : ""}`} key={item} aria-pressed={ambient.includes(item)} onClick={() => setAmbient(toggle(ambient, item))}>{item}</button>)}</div>{whoopConnected ? <label className={styles.checkLabel}><input type="checkbox" checked={includeWhoop} onChange={(event) => setIncludeWhoop(event.target.checked)} /><span>本次规划可读取 WHOOP 近期记录；远期预案不读取</span></label> : null}<button className={styles.primaryButton} disabled={loading || journey?.status === "completed" || !readyToPlan} onClick={openPlanningConsent}><Icon name="sync" />生成待确认方案</button></section><div className={styles.stack}><section className={styles.card}><div className={styles.sectionHead}><h3>当前安排的调整说明</h3><Badge tone="muted">{plan.plan.adjustments.length} 条</Badge></div>{plan.plan.adjustments.length ? plan.plan.adjustments.map((detail, index) => <div className={styles.diff} key={index}><span className={styles.eyebrow}><Icon name="check" size={15} />安排 {index + 1}</span><p>{detail}</p></div>) : <p>{plan.plan.reason}</p>}</section>{previousPlan ? <section className={styles.card}><h3>上一次与当前版本</h3><div className={styles.twoColumns}><div className={styles.inset}><div><small>上一次 · {previousPlan.plan.itinerary.length} 个节点</small><strong>{previousPlan.plan.headline}</strong></div></div><div className={styles.inset}><div><small>当前 · {plan.plan.itinerary.length} 个节点</small><strong>{plan.plan.headline}</strong></div></div></div><p className={styles.note}>新方案需要确认采用。历史安排可从版本历史查看和恢复。</p></section> : null}<Ambience image="tea" label="不赶路，也能抵达" title="留一个停顿，重新找回节奏。" /><div className={styles.breathingPrompt}><div><span className={styles.iconTile}><Icon name="wind" /></span><div><strong>先休息 3 分钟</strong><small>跟随呼吸，给自己一点空间</small></div></div><button onClick={() => navigate("breathing")}>开始</button></div></div></div><button className={styles.textButton} onClick={() => { if (journey) { clearPendingReservations(journey.id); fillDraft(journey.draft); } navigate("today"); }}><Icon name="back" size={16} />保留当前行程并返回今日</button></div>;
+  }

@@ -15,6 +15,7 @@ export type ScheduleItem = { time: string; name: string; fixed: boolean; date?: 
  */
 export const ASSUMED_DEPARTURE_HOUR = 9;
 export const ASSUMED_ARRIVAL_HOUR = 15;
+export const MAX_TRIP_DAYS = 30;
 
 export type TripInput = {
   originCity: string;
@@ -67,6 +68,15 @@ export function isCalendarDate(value: unknown): value is string {
   return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
 }
 
+/** Bound one generated itinerary to the output and latency budget. */
+export function planningDateError(start: unknown, end: unknown): string | null {
+  if (!isCalendarDate(start) || (end !== "" && !isCalendarDate(end))) return "请选择有效的旅行日期。";
+  if (end === "") return null;
+  if (end < start) return "返程日期应晚于或等于出发日期。";
+  const days = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1;
+  return days > MAX_TRIP_DAYS ? `单次最多规划 ${MAX_TRIP_DAYS} 天，较长旅程请分段规划。` : null;
+}
+
 function hasTimezone(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 80) return false;
   try {
@@ -77,21 +87,58 @@ function hasTimezone(value: unknown): value is string {
   }
 }
 
-export function parseSchedule(text: string): ScheduleItem[] | null {
-  if (!text.trim()) return [];
-  const rows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (rows.length > 30) return null;
+type ScheduleParseResult = { items: ScheduleItem[]; error: null } | { items: null; error: string };
+
+function readSchedule(text: string): ScheduleParseResult {
+  const rows = text.split(/\r\n|\n|\r/).map((line, index) => ({ text: line.trim(), line: index + 1 })).filter((row) => row.text);
+  const fail = (line: number, message: string): ScheduleParseResult => ({ items: null, error: `第 ${line} 行：${message}` });
+  if (rows.length > 30) return fail(rows[30].line, "最多填写 30 条活动，请减少活动数量。");
   const items: ScheduleItem[] = [];
   for (const row of rows) {
-    const match = row.match(/^(?:(\d{4}-\d{2}-\d{2})\s+)?(\d{2}:\d{2})\s*\|\s*(.{1,120}?)\s*\|\s*(固定|灵活)$/);
-    if (!match) return null;
-    const [, date, time, name, marker] = match;
-    if (date && !isCalendarDate(date)) return null;
-    const [hour, minute] = time.split(":").map(Number);
-    if (hour > 23 || minute > 59) return null;
-    items.push({ time, name: name.trim(), fixed: marker === "固定", ...(date ? { date } : {}) });
+    let content = row.text;
+    let date: string | undefined;
+    const firstToken = content.match(/^(\S+)(?:\s+|$)/)?.[1];
+    if (firstToken && /^\d{4}[-/]/.test(firstToken)) {
+      if (!isCalendarDate(firstToken)) return fail(row.line, "日期无效，请使用真实的 YYYY-MM-DD 日期。");
+      date = firstToken;
+      content = content.slice(firstToken.length).trim();
+    }
+    const parts = content.split(/[|｜]/).map((part) => part.trim());
+    if (parts.length > 3) return fail(row.line, "管道格式应为「13:00 | 活动名称 | 固定/灵活」。");
+    const clock = parts[0].match(/^(\d{1,2})[:：](\d{2})(?:\s+(.*))?$/);
+    if (!clock) return fail(row.line, "时间格式无效，请使用 H:mm 或 HH:mm（如 13:00），并与活动名称分开。");
+    const hour = Number(clock[1]);
+    const minute = Number(clock[2]);
+    if (hour > 23 || minute > 59) return fail(row.line, "时间无效：小时应为 0–23，分钟应为 00–59。");
+
+    let name = clock[3]?.trim() ?? "";
+    let marker: string | undefined;
+    if (parts.length === 3) {
+      if (name) return fail(row.line, "管道格式应为「13:00 | 活动名称 | 固定/灵活」。");
+      name = parts[1];
+      marker = parts[2];
+    } else if (parts.length === 2) {
+      marker = parts[1];
+    }
+    if (!name) return fail(row.line, "请填写活动名称（如「13:00 活动名称」）。");
+    if (name.length > 120) return fail(row.line, "活动名称最多 120 个字符。");
+    if (marker !== undefined && marker !== "固定" && marker !== "灵活") {
+      return fail(row.line, "活动标记只能填写「固定」或「灵活」。");
+    }
+    const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    items.push({ time, name, fixed: marker !== "灵活", ...(date ? { date } : {}) });
   }
-  return items;
+  return { items, error: null };
+}
+
+/** Shared strict parser: existing reservations default to fixed; omitted dates remain unset. */
+export function parseSchedule(text: string): ScheduleItem[] | null {
+  return readSchedule(text).items;
+}
+
+/** Returns the first actionable error using the original text's line numbers. */
+export function scheduleError(text: string): string | null {
+  return readSchedule(text).error;
 }
 
 export function validateInput(value: unknown): PlannerInput | null {
@@ -125,7 +172,7 @@ export function validateInput(value: unknown): PlannerInput | null {
   if (!parseSchedule(trip.itineraryText)) return null;
   // A return date earlier than departure is a picker mistake, not a request to
   // invert the trip.
-  if (trip.returnDate !== "" && String(trip.returnDate) < String(trip.departureDate)) return null;
+  if (planningDateError(trip.departureDate, trip.returnDate)) return null;
   const paceLevel = trip.paceLevel === undefined ? undefined : String(trip.paceLevel);
   if (paceLevel !== undefined && !["gentle", "balanced", "active"].includes(paceLevel)) return null;
   const rawGuardrails = trip.guardrails;

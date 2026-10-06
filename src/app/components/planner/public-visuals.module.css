@@ -1,0 +1,5 @@
+.gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.gallery figure { margin: 0; min-width: 0; overflow: hidden; border-radius: 14px; background: #edf0e9; }
+.gallery img { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: cover; }
+.gallery figcaption { padding: 9px 12px; font-size: 11px; line-height: 1.5; color: #536459; overflow-wrap: anywhere; }
+@media (max-width: 360px) { .gallery { grid-template-columns: minmax(0, 1fr); } }

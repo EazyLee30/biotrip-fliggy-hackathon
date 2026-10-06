@@ -59,10 +59,28 @@ export type JourneyProvenance = {
     elapsedMs: number;
   }>;
   health: { basis: "whoop_recent" | "self_report" | "preferences_only"; whoopUnavailable: boolean };
-  local: { verified: boolean; reason?: string };
-  flyai: { searches: number; failedSearches: number; failedCategories: string[]; sourceCount: number; executor: "agent_skill" | "worker" };
+  local: { verified: boolean; reason?: string; unverifiedCount?: number };
+  flyai: { searches: number; failedSearches: number; failedCategories: string[]; sourceCount: number; compositionSourceCount?: number; recommendedSourceCount?: number; executor: "agent_skill" | "worker"; fallbackReason?: string };
   memory: { applied: boolean; source: "learned" | "profile" | "none"; noteCount: number };
 };
+
+export type SourceKind = "fliggy_product" | "fliggy_poi" | "place_reference" | "topic_reference" | "reference";
+
+/** What an activity is, so an adjustment can reason about it without re-reading prose. */
+export type ActivityKind = "sight" | "meal" | "rest" | "relax" | "stay" | "experience" | "transit" | "other";
+/** 1 seated · 2 light walking · 3 sustained walking. A planning density, never a health measure. */
+export type ActivityEffort = 1 | 2 | 3;
+export type MoveMode = "walk" | "transit" | "taxi" | "none";
+/** How the traveller reaches this activity from the previous one. Figures exist only when a map tool returned them. */
+export type ActivityMove = { mode: MoveMode; minutes?: number; km?: number; costCny?: number; basis?: "amap" | "unverified" };
+export type ItineraryActivity = {
+  id?: string; sourceUrl?: string; date?: string; time: string; name: string; detail: string; fixed: boolean;
+  kind?: ActivityKind; effort?: ActivityEffort; durationMin?: number; move?: ActivityMove;
+};
+
+/** Real photographs bound server-side from the same FlyAI record as their link; never model output. */
+export type VisualRef = { imageUrl: string; name: string; url: string; kind: "poi" | "product" };
+export type JourneyVisuals = { cover: VisualRef[]; images: Record<string, Omit<VisualRef, "url">> };
 
 export type JourneyGeneratedPlan = {
   source: "live";
@@ -72,16 +90,19 @@ export type JourneyGeneratedPlan = {
     basis: "whoop_recent" | "self_report" | "preferences_only";
     provisional: boolean;
   };
-  localServices: Array<{ name: string; kind: string; detail: string; source: string; sourceUrl: string }>;
+  localServices: Array<{ sourceKind?: SourceKind; name: string; kind: string; detail: string; source: string; sourceUrl: string }>;
   plan: {
     headline: string;
     summary: string;
     reason: string;
     adjustments: string[];
-    itinerary: Array<{ date?: string; time: string; name: string; detail: string; fixed: boolean }>;
-    places: Array<{ name: string; category: string; reason: string; source: string; url: string }>;
+    itinerary: ItineraryActivity[];
+    places: Array<{ sourceKind?: SourceKind; name: string; category: string; reason: string; source: string; url: string; imageUrl?: string }>;
   };
+  visuals?: JourneyVisuals;
   provenance?: JourneyProvenance;
+  /** Manual changes retain the original generation provenance and retrieval time. */
+  manualAdjustment?: { updatedAt: string; revision: number; operationCount: number };
 };
 
 export type Journey = {

@@ -62,7 +62,7 @@ export function PaceMatrix({
         <Badge>可随时调整</Badge>
       </div>
       <p className={styles.note}>
-        这是你给行程的<b>目标密度</b>，不是身体检测结果。BioTrip 不会根据设备数据预测你的体能上限。
+        按你希望的活动密度安排，途中可以随时调整。
       </p>
       <div className={styles.paceGrid} role="radiogroup" aria-label="每日活动密度">
         {PACE_LEVELS.map((level) => {
@@ -89,7 +89,6 @@ export function PaceMatrix({
           );
         })}
       </div>
-      <p className={styles.note}>选定后每天都会按这个密度编排，你不需要再逐日调整。</p>
     </section>
   );
 }

@@ -1,20 +1,42 @@
-.zen-share-page { min-height: 100dvh; padding: 24px 24px 0; color: #141b2b; background: #f9f9ff; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+.zen-share-page { min-height: 100dvh; padding: 24px 24px 0; color: #273830; background: #f7f6f1; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
 .zen-share-header { max-width: 1000px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.zen-share-brand { display: flex; flex-direction: column; gap: 3px; color: #006948; font-size: 26px; font-weight: 750; letter-spacing: -.8px; }
+.zen-share-brand { display: flex; flex-direction: column; gap: 3px; color: #2f6654; font-size: 26px; font-weight: 750; letter-spacing: -.8px; }
 .zen-share-brand span { color: #6d7a72; font-size: 11px; font-weight: 500; letter-spacing: 0; }
-.zen-share-header > a:last-child { color: #006948; font-size: 13px; font-weight: 600; }
+.zen-share-header > a:last-child { color: #2f6654; font-size: 13px; font-weight: 600; }
 .zen-share-card { max-width: 640px; margin: 48px auto; padding: 40px; border-radius: 28px; background: white; box-shadow: 0 8px 30px -4px #1118270a; }
 .zen-share-kicker { color: #6d7a72; font-size: 12px; letter-spacing: 2px; }
-.zen-share-destination { margin: 20px 0 8px; color: #006948; font-size: 14px; font-weight: 650; }
+.zen-share-destination { margin: 20px 0 8px; color: #2f6654; font-size: 14px; font-weight: 650; }
 .zen-share-card h1 { margin: 0 0 24px; font-size: clamp(28px,5vw,40px); line-height: 1.35; letter-spacing: -1px; }
 .zen-share-summary { margin: 0; color: #3d4a42; font-size: 15px; line-height: 1.85; white-space: pre-line; }
 .zen-share-places { margin: 32px 0; }
 .zen-share-places h2 { margin: 0 0 14px; font-size: 14px; font-weight: 650; }
-.zen-share-places a { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding: 18px 20px; border-radius: 16px; background: #f1f3ff; }
+.zen-share-places a { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding: 18px 20px; border-radius: 16px; background: #edf0e9; }
 .zen-share-places span { color: #6d7a72; font-size: 11px; }
-.zen-share-places strong { color: #006948; font-size: 14px; font-weight: 600; }
-.zen-share-safety { margin-top: 28px; padding: 16px 20px; border-radius: 16px; background: #f9f9ff; color: #6d7a72; font-size: 12px; line-height: 1.8; }
-.zen-share-action { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 50px; margin-top: 24px; border: 0; border-radius: 999px; background: #006948; color: white; font-size: 14px; font-weight: 650; cursor: pointer; }
+.zen-share-places strong { color: #2f6654; font-size: 14px; font-weight: 600; }
+.zen-share-safety { margin-top: 28px; padding: 16px 20px; border-radius: 16px; background: #f7f6f1; color: #6d7a72; font-size: 12px; line-height: 1.8; }
+.zen-share-action { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 50px; margin-top: 24px; border: 0; border-radius: 999px; background: #2f6654; color: white; font-size: 14px; font-weight: 650; cursor: pointer; }
 .zen-share-expired { padding: 20px 0; color: #ba1a1a; font-size: 14px; line-height: 1.8; }
 .zen-share-footer { padding: 16px 0 28px; color: #6d7a72; text-align: center; font-size: 11px; }
 @media(max-width: 600px) { .zen-share-page { padding: 20px 20px 0; } .zen-share-card { margin: 32px auto; padding: 28px 24px; border-radius: 24px; } }
+.zen-share-itinerary { margin:28px 0; }
+.zen-share-itinerary h2 { font-size:16px; }
+.zen-share-itinerary > div { border-left:2px solid #dbeae1; padding:8px 0 14px 16px; overflow-wrap:anywhere; }
+.zen-share-itinerary small { font-size:12px; color:#2f6654; }
+.zen-share-itinerary h3 { font-size:15px; margin:8px 0; }
+.zen-share-itinerary p { margin:0; font-size:14px; color:#536459; line-height:1.7; white-space:pre-wrap; }
+.zen-share-card { max-width:960px; padding:0; overflow:hidden; border:1px solid #e7e8df; background:#fffefa; }
+.zen-share-cover { position:relative; display:flex; flex-direction:column; justify-content:center; min-height:300px; padding:38px; background-size:cover; background-position:65% 55%; isolation:isolate; }
+.zen-share-cover::before { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(90deg,#fffefaed,#fffefac0 55%,transparent); }
+.zen-share-cover small { color:#2f6654; letter-spacing:.12em; font-size:12px; }
+.zen-share-cover h1 { max-width:65%; margin:18px 0; font-family:var(--serif); font-weight:500; letter-spacing:0; }
+.zen-share-cover > span { position:absolute; right:14px; bottom:12px; padding:3px 6px; background:#fffefac0; border-radius:4px; font-size:10px; }
+.zen-share-body { padding:32px 38px; }
+.zen-share-itinerary h2,.zen-share-places h2 { font-family:var(--serif); font-weight:500; font-size:21px; }
+.zen-share-places { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.zen-share-places h2 { grid-column:1/-1; }
+.zen-share-places a { margin:0; background:#edf0e9; }
+@media(max-width:600px) { .zen-share-page { padding:18px 14px 0; } .zen-share-card { margin:24px auto; padding:0; } .zen-share-cover { min-height:230px; padding:24px; } .zen-share-cover h1 { max-width:80%; font-size:30px; } .zen-share-body { padding:22px; } .zen-share-places { grid-template-columns:1fr; } }
+
+.zen-share-postcard { max-width: 680px; }
+.zen-share-postcard .zen-share-cover { min-height: 300px; }
+.zen-share-postcard .zen-share-places { border-top: 1px solid #e0e6dd; padding-top: 24px; }

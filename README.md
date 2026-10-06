@@ -1,80 +1,136 @@
+<div align="center">
+
+<img src="public/brand/readme-banner.svg" alt="BioTrip · 让行程适合今天的你" width="100%" />
+
 # BioTrip · 让行程适合今天的你
 
-BioTrip 是手机优先、可添加到主屏幕的响应式旅行规划 PWA。开始新旅程时由 BioTrip 主动逐轮询问，回答会留在对话中供用户回看和修改；收集完毕后再展示本次数据用途并请求授权。它把旅行者选定的节奏、感官与颜色偏好、当下自评、时区变化，以及可选的 WHOOP 身体信号组合起来，搜索真实的飞猪旅行服务和目的地公开信息，再给出可核验、可调整的行程建议。
+**真实的目的地，灵活的安排，留一点空间给自己。**
 
-## 真实数据与明确边界
+[在线体验](https://biotrip.ccwu.cc) · [English](README.en.md) · [接入说明](docs/platform-access-checklist.md) · [隐私说明](https://biotrip.ccwu.cc/privacy)
 
-- 没有真实百炼 Agent、FlyAI API Key 与 WHOOP OAuth 配置时，规划按钮保持不可用；应用不生成示例行程或假造搜索结果。
-- WHOOP 连接后，每次规划前都要单独同意。健康解读 Agent 接收近 7 天各相关集合最多 100 条的 WHOOP API 返回记录及身体测量；WHOOP 姓名与邮箱只用于显示连接身份，不交给 AI。
-- 健康数据先发往专用健康解读 Agent（无任何工具与凭据），结果缩减为节奏和环境条件。当地信息 Agent 只接收城市、日期和服务/饮食偏好；行程编排 Agent 接收抽象节奏条件与本次明确列出的个人旅行记忆，不接收 WHOOP 原始记录。阶段与数据边界由代码强制，断言见 `src/lib/planning/grants.test.mjs`。
-- 旅行规划只提供建议和真实来源链接，不代替用户预订、付款、下单或修改第三方行程。医疗与放松内容只提供官方公开信息，不提供诊断或疗效承诺。
-- WHOOP OAuth token 以 AES-256-GCM 加密后按账户保存在 Cloudflare D1，一次授权在换设备或清理浏览器后仍然有效，直到你在账户页主动断开；原始身体指标不写入数据库。登录、档案、旅程与分享记录同样存入 D1，草稿与生成方案随账号保存，刷新或换设备后可继续。
-- 分享内容创建前需单独确认，公开页不含日期、日程、健康数据或个人记忆；分享链接可在个人档案中撤回。
-- 了解完整数据流请见 [隐私与数据说明](/privacy) 和[平台接入清单](docs/platform-access-checklist.md)。
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)](docs/cloudflare-deployment.md)
+[![React 19](https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white)](package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
+[![百炼 Managed Agents](https://img.shields.io/badge/百炼-Managed_Agents-6155B4?style=flat-square)](docs/bailian-agent-setup.md)
+[![高德 MCP](https://img.shields.io/badge/高德-MCP-478D64?style=flat-square)](docs/amap-mobility-setup.md)
+[![Tests](https://img.shields.io/badge/本地测试-351_通过-478D64?style=flat-square)](#验证与发布状态)
+[![CI](https://img.shields.io/badge/GitHub_Actions-CI-24292F?style=flat-square&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 
-## 架构
+</div>
 
+## 出发之前计划，旅途中调整
+
+BioTrip 是为飞猪黑客松打造的手机优先旅行规划应用。它将旅行偏好、当下自评、时区变化和可选的 WHOOP 身体信号，转化为有真实来源、可以逐条选择的行程建议。
+
+腿脚累了，换一段交通；想安静，给自己加一点休息。调整先提出建议，由你决定采纳哪些，固定预约受到保护，原安排可以从版本历史恢复。
+
+<table>
+<tr>
+<td width="50%"><strong>🧭 从真实来源开始</strong><br />飞猪旅行服务与当地公开资料分别展示，商品图片与链接来自核验后的检索结果。</td>
+<td width="50%"><strong>🌿 跟随今天的状态</strong><br />偏好与自评即可使用；WHOOP 是可选输入，每次使用前单独确认。</td>
+</tr>
+<tr>
+<td><strong>🚕 少走一段路</strong><br />高德独立出行顾问核验相邻地点的路线，展示实际返回的时长、距离和可选车费。</td>
+<td><strong>📖 保留你的选择</strong><br />后台任务可持续读取进度，草稿随账号保存，调整逐条采纳，历史版本可恢复。</td>
+</tr>
+</table>
+
+## 一段旅程如何发生
+
+1. **选好目的地与日期**，告诉 BioTrip 你的旅行节奏和偏好。
+2. **确认本次数据用途**，生成行程并查看真实商品与资料来源。
+3. **旅行中反馈感受**，基础建议先就绪，顾问并行核验补充信息。
+4. **选择想采纳的建议**，预览后保存新版本；保留固定安排与原版本。
+
+生成失败会展示实际原因，不用示例行程冒充真实结果。调整顾问不可用时，仍可使用明确标注的基础建议。BioTrip 提供建议与来源链接，预订、付款和第三方订单修改由用户自行完成。
+
+## 分工清楚的顾问
+
+```mermaid
+flowchart LR
+    U[旅行偏好与本次授权] --> W[Worker · 数据授权与任务管理]
+    W --> H[身体节奏解读]
+    W --> F[飞猪库存 / 舒缓货架]
+    W --> L[当地资料检索]
+    W --> M[高德出行顾问 · 调整阶段]
+    H --> C[无工具建议编排]
+    F --> C
+    L --> C
+    M --> C
+    C --> P[来源核验 · 行程校验]
+    P --> A[预览与确认]
+    A --> D[(D1 · 旅程与版本)]
 ```
-src/lib/planning/            规划流水线（唯一编排实现）
-  contract.ts                类型、DataGrant、buildStageInput、PlannerError
-  stages.ts                  唯一阶段表：授权 / 可降级 / 必需 / 预算
-  prompts.ts                 全部提示词集中一处
-  pipeline.ts                顺序、预算、中断、降级、progress、provenance
-  providers/                 bailian-agent（比赛要求）· bailian-model（兜底）
-src/lib/preferences.ts       从用户自己的选择学习偏好，可单条删除
-src/app/components/planner/  machine.ts（生命周期）· blocks/（内容块）
-```
 
-**数据边界由代码强制。** 每个阶段用 `grants` 声明自己能接收什么，`buildStageInput` 是唯一构造阶段输入的地方 —— 未声明的授权永远不会被复制进去。只有 `health_insight` 拿到 WHOOP 原始记录，而它的 Agent 配置为无任何工具。FlyAI 凭据由 provider 绑定到单次会话，从不作为阶段输入、从不进 prompt。`src/lib/planning/grants.test.mjs` 用断言守着这条线。
+| 顾问 | 输入与职责 | 边界 |
+| :--- | :--- | :--- |
+| 身体节奏 | 自评，以及本次获准使用的 WHOOP 记录 | 无工具、Skill、MCP 或旅行 Vault |
+| 飞猪库存 / 舒缓货架 | 旅行搜索参数、真实商品来源 | 旅行凭据只挂载到受控库存会话 |
+| 当地资料 | 城市与获准的旅行偏好等检索参数 | 公开资料与飞猪商品分开展示 |
+| 高德出行 | 城市与相邻公开地点名 | 独立 Agent；只启用五个只读工具，不获取当前 GPS |
+| 建议编排 | 抽象身体节奏、核验后的来源与获准记忆 | 无工具会话；不重复搜索，不接收 WHOOP 原始记录 |
 
-**记忆与偏好不由 Agent 决定。** Agent 是无状态单次会话；每次由 Worker 按你本次授权的范围读出记忆、注入 prompt。学习与读写在 Worker + D1 完成，只从你自己的选择和自评中学习，`hits ≥ 2` 才升级为下次默认值。
+代码通过 `DataGrant` 限制阶段输入，并在投递前核对受限 Agent 的实际 Session 配置。高德数字从配对的原始工具事件提取，模型总结不能充当路线事实。详情见 [百炼接入](docs/bailian-agent-setup.md) 与 [高德接入](docs/amap-mobility-setup.md)。
 
-**降级是声明式的。** 联网检索配额耗尽时标记为「本次未核验」，行程继续用已核验来源编排，而不是整单失败；每份行程都带 `provenance`，界面据此区分已核验与未核验。
+## 本地启动
 
-**无感交互。** WHOOP 连接一次后长期保持（存服务端加密 D1，换设备、清 Cookie 都不掉线），只有你手动断开才解除；草稿在停止输入后自动保存；重复选择过的偏好会自动带入下一次旅程；授权失效时自动降级为主观自评规划并提示重连，不会让行程失败；某一步检索未核验时界面明确标注，并只依据已核验来源编排。
-
-## Cloudflare 部署
-
-项目按 Cloudflare Workers 配置，生产域名为 `https://biotrip.ccwu.cc`，WHOOP 回调为 `https://biotrip.ccwu.cc/api/whoop/callback`。部署命令、密钥清单和 WHOOP 控制台设置见[Cloudflare 部署说明](docs/cloudflare-deployment.md)。
-
-## 本地运行
+需要 **Node.js 22+**、**pnpm 10**，以及用于真实规划的百炼与 FlyAI 配置。
 
 ```bash
-corepack pnpm install
-cp .env.example .env.local
-corepack pnpm dev
+pnpm install --frozen-lockfile
+cp .env.example .dev.vars
+# 按配置文档填写 .dev.vars 中的本地环境变量与密钥
+pnpm exec wrangler d1 migrations apply biotrip-users --local
+pnpm dev:vinext
 ```
 
-OAuth 回调本地地址为 `http://localhost:3000/api/whoop/callback`，必须先在独立的 BioTrip WHOOP Developer App 中注册。线上环境必须为 BioTrip 配置独立 HTTPS 域名、公开隐私说明及精确匹配的 OAuth 回调。
+打开 [localhost:3001](http://localhost:3001)。当前生产路径使用 **vinext + Cloudflare Workers**；项目保留 Next.js 开发脚本，Worker 绑定与后台任务请用上述路径验收。
 
-## 服务配置
+| 配置 | 说明 |
+| :--- | :--- |
+| 百炼 | 标准 API Key、工作空间、各 Agent 与运行环境，见 [配置指南](docs/bailian-agent-setup.md) |
+| FlyAI | 官方 API Key、签名配置与受控旅行 Vault，见 [平台接入](docs/platform-access-checklist.md) |
+| 高德 | Web 服务 Key 只保存在百炼官方 MCP 私密配置，应用配置独立 Agent / 环境 ID |
+| 登录邮件 | 账号加密配置与 Resend，见 [邮箱登录](docs/email-auth-setup.md) |
+| WHOOP（可选） | 独立 Developer App、精确匹配的回调与服务端加密秘密 |
 
-先完成 [百炼 Agent 配置](docs/bailian-agent-setup.md)，然后在服务端 `.env.local` 中填写：
+生产密钥使用 Worker Secrets；`.dev.vars`、`.env.local`、本地数据库和验收输出均排除在 Git 之外。不要将密钥放进前端、截图、命令参数或聊天。
 
-- WHOOP Client ID / Client Secret / Redirect URI 和 Cookie 加密秘密。
-- 百炼 API Key、工作空间、旅行 Agent、无工具健康 Agent 与当地信息 Agent 的 ID 和运行环境。
-- FlyAI API Key 只放在百炼旅行 Agent 的受控运行环境中，不放进 BioTrip 前端或 `.env.local`。
+## 验证与发布状态
 
-`docs/competition-rules-and-data.md` 记录了比赛规则核对、赛程、数据使用范围和费用来源。
+截至 **2026-10-05**：
 
-## 接入与发布状态
+- **351 项本地测试通过**，TypeScript、定向 ESLint 和 vinext 生产构建通过。此徽章是本地验收记录；GitHub CI 结果请查看 [Actions](https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions)。
+- **高德真实链路通过本地验收**：Session 配置 → 原始 SSE → 建议卡片 → 单条采纳 → D1 版本保存。杭州西湖至灵隐寺一次查询返回驾车约 28 分钟、5.5 公里；它是当次估算，会随路况变化。
+- **已发布**到 [biotrip.ccwu.cc](https://biotrip.ccwu.cc)，版本 `c0d6d885-ca1f-40cb-8084-a3930ef86553`。生产迁移齐备，页面及静态资源正常，匿名任务接口要求登录。
+- **待继续验证**：生产环境的真实路线会诊、实体手机体验。WHOOP 应用仍为 Sandbox，可用名额以平台为准。
 
-**权威状态见 [项目状态与交付清单](docs/project-plan.md)，改进排期见 [改进计划](docs/improvement-plan.md)。** 本节只做摘要，两者不一致时以 `project-plan.md` 为准。
+发布与测试范围见 [部署记录](docs/cloudflare-deployment.md)、[调整续作记录](docs/adjustment-continuation.md) 和 [移动端验收](docs/mobile-acceptance.md)。
 
-生产环境已配置 WHOOP OAuth、百炼 Managed Agents、健康解读/当地服务/旅行编排三个 Agent，以及只在旅行 Agent 会话中使用的 FlyAI 凭据 Vault。WHOOP App 目前是 Sandbox，最多 10 个连接成员。默认支持邮箱和密码登录；新用户首次验证邮箱并设置密码，已有验证码账户可在“注册 / 首次设置密码”或个人档案的“登录与安全”设置密码，原账户与记忆保留。“忘记密码”通过邮件验证重置，可选验证码登录仍可用。
+## 项目地图
 
-### 已知未完成事项
+```text
+src/app/                    页面、API 与手机优先交互
+src/lib/planning/           阶段授权、顾问、事件证据与后台任务
+src/lib/adjust/             基础建议、冲突检查与行程重排
+src/workers/                Worker 入口与持久 Workflow
+migrations/                 D1 数据迁移
+public/                     字体、旅行氛围图、目的地素材
+bailian/                    FlyAI Skill 与官方接入材料
+```
 
-以下三项在提交前必须闭合，逐条核实方式见 [project-plan.md 第 3 节](docs/project-plan.md)：
+[项目状态](docs/project-plan.md) · [产品执行记录](docs/zen-product-execution.md) · [图片与字体来源](https://biotrip.ccwu.cc/credits) · [比赛与数据边界](docs/competition-rules-and-data.md)
 
-1. **线上 Worker 版本落后仓库两次提交。** 生产 Version `a798497d` 部署于统一流水线重构（`7e16b18`）和文档对齐（`263d726`）之前，线上运行的不是当前代码。重新部署会同时让 `BAILIAN_PLANNING_MODE=auto` 生效，首次真实规划将走 Managed Agent 运行时计费。
-2. **生产 D1 迁移状态未核实。** 文档只有 `0002_password_auth.sql` 的应用记录；`0003_journeys.sql`、`0004_whoop_connections.sql`、`0005_learned_preferences.sql` 状态未知。`journeys` 表缺失会让所有旅程接口返回 503。**必须先应用迁移，再部署代码。**
-3. **邮件登录配置状态两份文档曾互相矛盾，现统一标记为待核实。** 验证邮件使用 Resend 事务邮件 API，发信域为 `notify.biotrip.ccwu.cc`。`RESEND_API_KEY` 是否已写入 Worker Secret、该子域是否已在 Resend 完成 DNS 验证，需以 `pnpm exec wrangler secret list` 与 Resend 控制台为准。未通过则线上无法注册。Cloudflare Email Routing 可免费用于自定义地址收信转发，不负责给任意用户发送登录码。
+## 数据与素材
 
-百炼账户余额此前显示 ¥0；在可用额度或余额恢复前，真实规划请求会因供应商余额失败并明确报错，不会退回演示数据。**截至本文更新，BioTrip 尚未成功完成过一次真实的端到端规划**，因此所有"已配置"均指平台侧资源配置完成，不代表链路已验证。
+WHOOP token 按账户加密保存，原始身体指标不写入数据库；偏好学习由 Worker 按用户自己的选择执行。公开分享单独确认，不包含日期、完整日程、健康数据或个人记忆，链接可以撤回。完整规则以 [隐私说明](https://biotrip.ccwu.cc/privacy) 为准。
 
-邮箱配置步骤见[邮箱登录说明](docs/email-auth-setup.md)，部署操作见[Cloudflare 部署说明](docs/cloudflare-deployment.md)，平台验证状态见[平台接入清单](docs/platform-access-checklist.md)，市场定位见[市场与差异化](docs/market-and-differentiation.md)。
+生成氛围图与目的地实景分别标明，照片、字体与第三方 Skill 的许可见素材回执及各自许可文件。本仓库未声明统一开源许可证。
 
-## 仓库与安全
+<div align="center">
 
-不要提交 WHOOP 原始数据、OAuth Token、Client Secret、百炼/FlyAI 密钥、报名身份证件或其他个人信息。`.env.local` 已排除在 Git 之外。提交比赛材料之前，单独核对作品可访问性、报名身份信息与主办方宣传授权。
+**让旅途照顾好今天的你。**
+
+[体验 BioTrip ↗](https://biotrip.ccwu.cc)
+
+</div>

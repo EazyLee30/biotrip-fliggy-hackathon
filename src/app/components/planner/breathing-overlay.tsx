@@ -16,7 +16,7 @@ export function BreathingOverlay({ open, children }: { open: boolean; children: 
     if (!open) return;
     // Freeze the page behind the session so a wheel or swipe cannot scroll away
     // from the animation and leave the traveller looking at a blank edge.
-    const { body, documentElement } = document;
+    const { body } = document;
     const previousOverflow = body.style.overflow;
     const previousPadding = body.style.paddingBottom;
     body.style.overflow = "hidden";

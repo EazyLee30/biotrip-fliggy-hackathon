@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { readBoundedUpstream } from "./upstream-response";
+import { extractFlyaiSources } from "./planning/flyai-sources";
 
 const ENDPOINT = "https://flyai.open.fliggy.com/mcp";
 export const FLYAI_READ_TOOLS = new Set([
@@ -55,7 +56,7 @@ export async function forwardFlyaiSearch(body: string, request: Request, apiKey:
   });
 }
 
-export type FlyaiSource = { name: string; url: string; category: string; price: string | null };
+export type FlyaiSource = { name: string; url: string; category: string; price: string | null; imageUrl?: string; address?: string };
 export class FlyaiSearchError extends Error {
   constructor(readonly status: number, readonly code: string) {
     super(code);
@@ -65,10 +66,6 @@ export class FlyaiSearchError extends Error {
 function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-function https(value: unknown) {
-  if (typeof value !== "string") return null;
-  try { const url = new URL(value); return url.protocol === "https:" ? url.toString() : null; } catch { return null; }
-}
 
 // Same read-only JSON-RPC request as the official CLI, signed with the real
 // server credential. No Vault placeholder, shell, login or model retry loop.
@@ -77,7 +74,47 @@ export async function searchFlyai(tool: string, args: Record<string, unknown>, s
   const secret = process.env.FLYAI_SIGN_SECRET;
   if (!key || !secret) throw new FlyaiSearchError(503, "FLYAI_NOT_CONFIGURED");
   if (!FLYAI_READ_TOOLS.has(tool)) throw new FlyaiSearchError(400, "FLYAI_READ_ONLY");
-  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: args } });
+  const result = await flyaiRpc("tools/call", { name: tool, arguments: args }, signal, category);
+  const content = result.content;
+  const first = Array.isArray(content) ? content.find((part) => record(part) && part.type === "text" && typeof part.text === "string") : null;
+  let payload: unknown;
+  try { payload = record(first) ? JSON.parse(String(first.text)) : null; } catch { payload = null; }
+  if (!record(payload) || payload.status !== 0 || payload.message !== "success" || !record(payload.data)) {
+    // Keep the reason, never the content: an unexplained provider rejection is
+    // the difference between a quota problem and a wrong argument shape.
+    console.info("[BioTrip flyai output rejected]", {
+      tool,
+      category,
+      status: record(payload) ? String(payload.status) : typeof payload,
+      message: record(payload) && typeof payload.message === "string" ? payload.message.slice(0, 120) : "unparsed",
+      systemMessage: record(payload) && typeof payload.systemMessage === "string" ? payload.systemMessage.slice(0, 120) : "",
+      dataKeys: record(payload) && record(payload.data) ? Object.keys(payload.data).slice(0, 8) : [],
+    });
+    throw new FlyaiSearchError(502, "FLYAI_OUTPUT_UNVERIFIED");
+  }
+  return { sources: extractFlyaiSources(payload.data, category, 20), verified: true as const };
+}
+
+/** Signed discovery uses the provider’s actual schema, never guessed arguments. */
+export async function listFlyaiTools(signal: AbortSignal) {
+  const found: Record<string, unknown>[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 4; page++) {
+    const result = await flyaiRpc("tools/list", cursor ? { cursor } : undefined, signal, "公开景点目录");
+    if (!Array.isArray(result.tools)) throw new FlyaiSearchError(502, "INVALID_FLYAI_TOOL_SCHEMA");
+    found.push(...result.tools.filter(record));
+    if (found.some(tool => tool.name === "search_poi")) return found;
+    cursor = typeof result.nextCursor === "string" ? result.nextCursor : undefined;
+    if (!cursor) break;
+  }
+  return found;
+}
+
+async function flyaiRpc(method: string, params: Record<string, unknown> | undefined, signal: AbortSignal, category: string) {
+  const key = process.env.FLYAI_API_KEY;
+  const secret = process.env.FLYAI_SIGN_SECRET;
+  if (!key || !secret) throw new FlyaiSearchError(503, "FLYAI_NOT_CONFIGURED");
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, ...(params ? { params } : {}) });
   const headers = flyaiSignedHeaders(body, key, secret);
   headers.set("User-Agent", "BioTrip/1.0");
   let response: Response;
@@ -95,7 +132,7 @@ export async function searchFlyai(tool: string, args: Record<string, unknown>, s
     const cause = error instanceof Error ? (error.cause as { code?: string; name?: string } | undefined) : undefined;
     // Keep the transport reason: DNS, TLS and reset are different fixes.
     console.info("[BioTrip flyai transport failure]", {
-      tool,
+      tool: method,
       category,
       name: error instanceof Error ? error.name : typeof error,
       cause: cause?.code ?? cause?.name ?? "",
@@ -131,38 +168,5 @@ export async function searchFlyai(tool: string, args: Record<string, unknown>, s
   if (!record(envelope) || envelope.error || !record(envelope.result) || envelope.result.isError === true) {
     throw new FlyaiSearchError(502, "FLYAI_API_ERROR");
   }
-  const content = envelope.result.content;
-  const first = Array.isArray(content) ? content.find((part) => record(part) && part.type === "text" && typeof part.text === "string") : null;
-  let payload: unknown;
-  try { payload = record(first) ? JSON.parse(String(first.text)) : null; } catch { payload = null; }
-  if (!record(payload) || payload.status !== 0 || payload.message !== "success" || !record(payload.data)) {
-    // Keep the reason, never the content: an unexplained provider rejection is
-    // the difference between a quota problem and a wrong argument shape.
-    console.info("[BioTrip flyai output rejected]", {
-      tool,
-      category,
-      status: record(payload) ? String(payload.status) : typeof payload,
-      message: record(payload) && typeof payload.message === "string" ? payload.message.slice(0, 120) : "unparsed",
-      systemMessage: record(payload) && typeof payload.systemMessage === "string" ? payload.systemMessage.slice(0, 120) : "",
-      dataKeys: record(payload) && record(payload.data) ? Object.keys(payload.data).slice(0, 8) : [],
-    });
-    throw new FlyaiSearchError(502, "FLYAI_OUTPUT_UNVERIFIED");
-  }
-  const sources = new Map<string, FlyaiSource>();
-  const walk = (value: unknown, depth = 0) => {
-    if (depth > 12 || sources.size >= 20) return;
-    if (Array.isArray(value)) { for (const item of value.slice(0, 40)) walk(item, depth + 1); return; }
-    if (!record(value)) return;
-    const url = https(value.jumpUrl ?? value.detailUrl ?? value.url ?? value.link);
-    const name = value.title ?? value.name ?? value.poiName ?? value.hotelName;
-    if (url && typeof name === "string" && name.trim()) {
-      const price = typeof value.price === "string" || typeof value.price === "number" ? String(value.price).slice(0, 40) : null;
-      sources.set(url, { name: name.slice(0, 160), url, category, price });
-    }
-    for (const [field, item] of Object.entries(value).slice(0, 60)) {
-      if (!/image|pic|thumbnail|icon|systemMessage/i.test(field)) walk(item, depth + 1);
-    }
-  };
-  walk(payload.data);
-  return { sources: [...sources.values()], verified: true as const };
+  return envelope.result;
 }

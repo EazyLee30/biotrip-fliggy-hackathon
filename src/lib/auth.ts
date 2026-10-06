@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, randomInt, randomUUID } from "node:crypto";
-import { env } from "cloudflare:workers";
+import { getDatabase } from "./database";
+export { getDatabase } from "./database";
 import { cookies } from "next/headers";
 
 export const SESSION_COOKIE = "__Host-biotrip-session";
@@ -22,7 +23,7 @@ export class AuthRateLimitError extends Error {
   }
 }
 
-export function getDatabase() { return env.BIOTRIP_DB; }
+
 
 function requiredSecret() {
   const secret = process.env.AUTH_SECRET;
