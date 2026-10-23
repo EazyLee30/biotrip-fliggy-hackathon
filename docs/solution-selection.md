@@ -69,7 +69,7 @@ BioTrip 不是再生成一份完整攻略，而是把 WHOOP 身体状态、旅�
 
 比赛强制的百炼资源不是完全免费：Managed Agent 运行中的会话费 0.5 元/小时；模型与工具/MCP 单独计费。官方有 10 小时运行时抵扣，30 天有效；FlyAI 的调用配额是另一套规则。需要做开发会话自动结束，限制工具调用，提交前检查云账单。
 
-应用选择 Cloudflare Workers + vinext，使用 `biotrip.ccwu.cc` Custom Domain、HTTPS WHOOP callback 和 Worker secrets。旅行方案只存用户当前设备，WHOOP OAuth 凭据使用加密 HttpOnly Cookie，因此当前单用户版本不需额外数据库保存刷新令牌或行程。Cloudflare Pages 只适用于静态导出，不承载本项目的 OAuth 和服务端 API。
+应用选择 Cloudflare Workers + vinext，使用 `biotrip.eazylee.si` Custom Domain、HTTPS WHOOP callback 和 Worker secrets。旅行方案只存用户当前设备，WHOOP OAuth 凭据使用加密 HttpOnly Cookie，因此当前单用户版本不需额外数据库保存刷新令牌或行程。Cloudflare Pages 只适用于静态导出，不承载本项目的 OAuth 和服务端 API。
 
 Cloudflare 当前推荐 vinext 作为 Next.js Workers 路径，但 vinext 仍处于 beta。项目兼容性扫描、Worker 构建和 Wrangler dry-run 已通过；生产部署仍需完成 Cloudflare CLI OAuth 授权并注入平台 secrets。部署前后都应查看 Cloudflare、百炼和 FlyAI 实际计费与配额，不假设免费额度或无限运行时。
 

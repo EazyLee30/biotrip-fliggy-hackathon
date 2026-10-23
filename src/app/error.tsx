@@ -12,7 +12,7 @@ export default function ErrorPage({ retry, reset }: { retry?: () => void; reset:
         <h1>这一步暂时没能完成</h1>
         <p>请重新加载页面。已保存到账号的旅程和偏好，可以在连接恢复后继续查看。</p>
         <button onClick={() => (retry ?? reset)()}>重新加载</button>
-        <Link className="status-secondary" href="/">返回我的旅程</Link>
+        <Link className="status-secondary" href="/app">返回我的旅程</Link>
       </section>
     </main>
   );

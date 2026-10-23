@@ -84,3 +84,25 @@ test("batch text validates dated rows and reports original line numbers, preserv
   assert.match(reservationTextError("\n13:07 legacy\n\n2026-10-05 13:00 活动", "2026-10-03", "2026-10-04"), /第 4 行.*旅程内/);
   assert.equal(reservationTextError("", "", ""), null);
 });
+
+test("legacy recovery offers valid cards and accounts for every unresolved original entry", () => {
+  const original = "13:07 朋友午餐\n旧安排待核对\n2026-10-08 18:00 超出日期\n2026-10-04 10:15 | 展览 | 灵活";
+  const recovered = helpers.recoverReservationCards(original, "2026-10-03", "2026-10-04");
+  assert.equal(recovered.totalCount, 4);
+  assert.equal(recovered.recoveredCount, 2);
+  assert.equal(recovered.pendingCount, 2);
+  assert.deepEqual(plain(parser.parseSchedule(recovered.value)), [
+    { date: "2026-10-03", time: "13:07", name: "朋友午餐", fixed: true },
+    { date: "2026-10-04", time: "10:15", name: "展览", fixed: false },
+  ]);
+  assert.match(original, /旧安排待核对/);
+});
+
+test("legacy recovery keeps an explicit unresolved count when no cards or too many cards can be recovered", () => {
+  const empty = helpers.recoverReservationCards("旧安排一\n旧安排二", "2026-10-03", "2026-10-04");
+  assert.deepEqual(plain(empty), { value: "", totalCount: 2, recoveredCount: 0, pendingCount: 2 });
+  const overflow = helpers.recoverReservationCards(Array.from({length:32}, (_,i)=>`13:00 活动${i}`).join("\n"), "2026-10-03", "2026-10-04");
+  assert.equal(overflow.recoveredCount, 30);
+  assert.equal(overflow.pendingCount, 2);
+  assert.equal(parser.scheduleError(overflow.value), null);
+});

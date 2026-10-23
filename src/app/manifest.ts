@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "BioTrip · 让行程更适合今天",
     short_name: "BioTrip",
     description: "根据身体状态，温和调整旅行节奏。每一处改变，都由你确认。",
-    start_url: "/",
+    start_url: "/app",
     scope: "/",
     display: "standalone",
     display_override: ["standalone", "minimal-ui"],

@@ -30,7 +30,7 @@
 | # | 事项 | 负责 | 工作量 |
 | --- | --- | --- | --- |
 | 0.1 | `wrangler d1 migrations list biotrip-users --remote` 查已应用迁移；补应用 `0003`/`0004`/`0005`。**先迁移，后部署** | 你 | 15 分钟 |
-| 0.2 | `wrangler secret list` 确认 `RESEND_API_KEY`；Resend 控制台确认 `notify.biotrip.ccwu.cc` DNS 验证；实测发一封验证码 | 你 | 30 分钟 |
+| 0.2 | `wrangler secret list` 确认 `RESEND_API_KEY`；Resend 控制台确认 `notify.biotrip.eazylee.si` DNS 验证；实测发一封验证码 | 你 | 30 分钟 |
 | 0.3 | 百炼控制台确认：余额、`qwen3.7-flash` 免费额度、Managed Agent 10 小时运行时额度剩余与到期日、三个 Agent 的模型权限 | 你 | 20 分钟 |
 | 0.4 | **在百炼控制台手工跑一遍三个 Agent**，不要拿生产 Worker 当第一次调试 | 你 + 我准备提示词 | 1 小时 |
 | 0.5 | 重新部署（`build:vinext` → `deploy:vinext`），记录新 Version ID。⚠️ 部署后 `BAILIAN_PLANNING_MODE=auto` 生效，首次真实规划走 Managed Agent 计费 | 你 | 20 分钟 |

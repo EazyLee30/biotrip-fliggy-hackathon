@@ -63,3 +63,5 @@
 @media (prefers-reduced-motion:no-preference) { .dialog { animation:pickerEnter .18s ease-out; }@keyframes pickerEnter { from { transform:translateY(16px); opacity:.5; }to { transform:translateY(0); opacity:1; } } }
 @media (min-width:640px) { .sheetTop { cursor:auto; touch-action:auto; } .indexPreview { right:54px; } }
 @media (prefers-reduced-motion:reduce) { .dialog { transition:none; } }
+
+@media (max-width: 639px) { .heading > .close { display: none; } }

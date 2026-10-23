@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { readBoundedUpstream } from "./upstream-response";
 import { extractFlyaiSources } from "./planning/flyai-sources";
+import type { FlyaiTool, VerifiedOffer } from "./travel-search-types";
 
 const ENDPOINT = "https://flyai.open.fliggy.com/mcp";
 export const FLYAI_READ_TOOLS = new Set([
@@ -56,7 +57,7 @@ export async function forwardFlyaiSearch(body: string, request: Request, apiKey:
   });
 }
 
-export type FlyaiSource = { name: string; url: string; category: string; price: string | null; imageUrl?: string; address?: string };
+export type FlyaiSource = { name: string; url: string; category: string; price: string | null; imageUrl?: string; address?: string } & Partial<Pick<VerifiedOffer, "id" | "kind" | "tool" | "retrievedAt" | "facts" | "transport">>;
 export class FlyaiSearchError extends Error {
   constructor(readonly status: number, readonly code: string) {
     super(code);
@@ -79,20 +80,22 @@ export async function searchFlyai(tool: string, args: Record<string, unknown>, s
   const first = Array.isArray(content) ? content.find((part) => record(part) && part.type === "text" && typeof part.text === "string") : null;
   let payload: unknown;
   try { payload = record(first) ? JSON.parse(String(first.text)) : null; } catch { payload = null; }
-  if (!record(payload) || payload.status !== 0 || payload.message !== "success" || !record(payload.data)) {
-    // Keep the reason, never the content: an unexplained provider rejection is
-    // the difference between a quota problem and a wrong argument shape.
+  if (!record(payload) || payload.status !== 0 || payload.message !== "success" ||
+      !(record(payload.data) || Array.isArray(payload.data) || typeof payload.data === "string")) {
+    // Upstream error prose can echo request contents or credentials. Keep
+    // only structural diagnostics; the public error remains a fixed code.
     console.info("[BioTrip flyai output rejected]", {
       tool,
       category,
-      status: record(payload) ? String(payload.status) : typeof payload,
-      message: record(payload) && typeof payload.message === "string" ? payload.message.slice(0, 120) : "unparsed",
-      systemMessage: record(payload) && typeof payload.systemMessage === "string" ? payload.systemMessage.slice(0, 120) : "",
-      dataKeys: record(payload) && record(payload.data) ? Object.keys(payload.data).slice(0, 8) : [],
+      status: record(payload) && typeof payload.status === "number" && Number.isFinite(payload.status) ? payload.status : null,
+      payloadType: Array.isArray(payload) ? "array" : typeof payload,
+      dataType: record(payload) ? (Array.isArray(payload.data) ? "array" : typeof payload.data) : "missing",
     });
     throw new FlyaiSearchError(502, "FLYAI_OUTPUT_UNVERIFIED");
   }
-  return { sources: extractFlyaiSources(payload.data, category, 20), verified: true as const };
+  // Semantic search may wrap structured results in a JSON string. The
+  // extractor parses it with a bound; unstructured prose yields no offers.
+  return { sources: extractFlyaiSources(payload.data, category, 20, tool as FlyaiTool), verified: true as const };
 }
 
 /** Signed discovery uses the provider’s actual schema, never guessed arguments. */

@@ -15,12 +15,13 @@ export async function consumeInventoryStream(
   const decoder = new TextDecoder();
   let buffer = "";
   const published = new Set<string>();
-  const requiredCategories = new Set(commands.map((item) => item.category));
   const abort = () => { void reader.cancel().catch(() => undefined); };
   controller.signal.addEventListener("abort", abort, { once: true });
   const ready = () => {
     const result = evidence.result();
-    return [...requiredCategories].every((category) => result.flyaiCategories.includes(category));
+    return commands.every(command => command.queryKey
+      ? result.queryReceipts?.some(receipt => receipt.queryKey === command.queryKey && ["completed", "empty"].includes(receipt.state))
+      : result.flyaiCategories.includes(command.category));
   };
   const frame = (value: string) => {
     const data = value.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
@@ -80,6 +81,11 @@ export async function consumeInventoryStream(
     // An authentic empty result is a completed query, not a transport failure.
     // Its category stays explicitly unverified without repeating the search.
     return evidence.result();
+  } catch (error) {
+    // Keep completed queries, including authentic empty results, when a later
+    // tool fails. The fallback can then search only the missing fingerprints.
+    if (error && typeof error === "object") Object.assign(error, { inventoryEvidence: evidence.result() });
+    throw error;
   } finally {
     controller.signal.removeEventListener("abort", abort);
     await reader.cancel().catch(() => undefined);

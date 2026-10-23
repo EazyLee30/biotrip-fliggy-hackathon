@@ -23,6 +23,7 @@ export const PREFERENCE_KINDS = [
   "food",
   "service",
   "destination",
+  "home",
   "schedule",
 ] as const;
 export type PreferenceKind = (typeof PREFERENCE_KINDS)[number];
@@ -83,16 +84,17 @@ export const PREFERENCE_LABELS: Record<PreferenceKind, Record<string, string>> =
   rhythm: RHYTHM_LABELS,
   pace: PACE_LABELS,
   guardrail: GUARDRAIL_LABELS,
-  ambience: {},
+  ambience: Object.fromEntries(["安静少噪", "自然气息", "柔和光线", "人少宽松", "慢节奏", "少走路"].map(value => [value, value])),
   intention: INTENTION_LABELS,
   tone: TONE_LABELS,
   food: {},
   service: SERVICE_LABELS,
   destination: {},
+  home: {},
   schedule: SCHEDULE_LABELS,
 };
 
-const FREE_TEXT_KINDS = new Set<PreferenceKind>(["food", "destination"]);
+const FREE_TEXT_KINDS = new Set<PreferenceKind>(["food", "destination", "home"]);
 const MAX_PREFERENCE_KINDS_IN_TEXT = 4000;
 const MAX_ROWS_PER_FREE_TEXT_KIND = 12;
 /** A preference must be chosen twice before it silently prefills a new trip. */
@@ -149,27 +151,14 @@ export function signalsFromDraft(draft: JourneyDraft, source: PreferenceSource =
   if (draft.trip?.foodPreferences) addSignals(signals, "food", [draft.trip.foodPreferences], source);
   if (draft.trip?.destinationCity) addSignals(signals, "destination", [draft.trip.destinationCity], source);
 
-  // Derived only from what the traveller reported about themselves right now.
-  const tired = (draft.fatigue ?? 0) >= 4 || (draft.subjectiveStress ?? 0) >= 4;
-  if (tired) {
-    addSignals(signals, "schedule", ["rest_first_on_arrival", "slow_when_tired"], source);
-  }
   return signals;
 }
 
 /** Turns an in-trip feeling into the habits that should shape later trips. */
 export function signalsFromFeedback(feedback: JourneyFeedbackInput): Signal[] {
-  const signals: Signal[] = [];
-  const reported = [feedback.fatigue, feedback.subjectiveStress].filter(
-    (value): value is number => typeof value === "number",
-  );
-  if (reported.length && Math.max(...reported) >= 4) {
-    addSignals(signals, "schedule", ["rest_first_on_arrival", "slow_when_tired"], "feedback");
-  }
-  if (feedback.moodFeedback && /安静|放松|轻松|不赶|慢|留白/.test(feedback.moodFeedback)) {
-    addSignals(signals, "schedule", ["rest_first_on_arrival"], "feedback");
-  }
-  return signals;
+  void feedback;
+  // A transient check-in is not evidence of a standing preference.
+  return [];
 }
 
 async function db() {
@@ -216,20 +205,24 @@ export async function learnFromFeedback(accountId: string, feedback: JourneyFeed
 export async function learnFromProfile(accountId: string, profile: {
   travelStyle: string; sensoryPreferences: string[]; foodPreferences: string; homeCity: string;
 }) {
-  await learnPreferences(accountId, signalsFromDraft({
+  const signals = signalsFromDraft({
     ambientPreferences: profile.sensoryPreferences,
     trip: {
       planningStyle: profile.travelStyle === "structured" ? "structured" : "flexible",
       foodPreferences: profile.foodPreferences,
       destinationCity: profile.homeCity,
     },
-  }, "profile"));
+  }, "profile").filter(signal => signal.kind !== "destination");
+  addSignals(signals, "home", [profile.homeCity], "profile");
+  await learnPreferences(accountId, signals);
 }
 
 export async function listLearnedPreferences(accountId: string): Promise<LearnedPreference[]> {
   try {
     const rows = await (await db()).prepare(`SELECT id, kind, value, label, source, hits, last_seen_at
-        FROM learned_preferences WHERE account_id = ? ORDER BY hits DESC, last_seen_at DESC LIMIT 200`)
+        FROM learned_preferences WHERE account_id = ? AND NOT EXISTS (SELECT 1 FROM memory_items m WHERE m.account_id=learned_preferences.account_id
+          AND m.dedupe_key='choice:'||learned_preferences.kind||':'||learned_preferences.value AND (m.deleted=1 OR m.enabled=0 OR m.version>1))
+        ORDER BY hits DESC, last_seen_at DESC LIMIT 200`)
       .bind(accountId).all<PreferenceRow>();
     return rows.results.map((row) => ({
       id: row.id,
@@ -249,10 +242,14 @@ export async function forgetLearnedPreference(accountId: string, id: string) {
   const result = await (await db()).prepare("DELETE FROM learned_preferences WHERE id = ? AND account_id = ?")
     .bind(id, accountId).run();
   if (result.meta.changes !== 1) throw new Error("这条记忆不存在。");
+  await (await db()).prepare("UPDATE memory_items SET deleted=1,enabled=0,version=version+1 WHERE source_id=? AND account_id=? AND source='choice'").bind(id,accountId).run();
 }
 
 export async function clearLearnedPreferences(accountId: string) {
-  await (await db()).prepare("DELETE FROM learned_preferences WHERE account_id = ?").bind(accountId).run();
+  await (await db()).batch([
+    (await db()).prepare("DELETE FROM learned_preferences WHERE account_id = ?").bind(accountId),
+    (await db()).prepare("UPDATE memory_items SET deleted=1,enabled=0,version=version+1 WHERE account_id=? AND source='choice'").bind(accountId),
+  ]);
 }
 
 function strongest(preferences: LearnedPreference[], kind: PreferenceKind, minimumHits = 1, limit = 99) {
@@ -263,6 +260,7 @@ function strongest(preferences: LearnedPreference[], kind: PreferenceKind, minim
 }
 
 export type PreferenceDefaults = {
+  paceLevel?: "gentle" | "balanced" | "active";
   planningStyle?: "flexible" | "structured";
   intention?: string;
   colorTone?: string;
@@ -284,6 +282,7 @@ export type PreferenceDefaults = {
  * preferences are applied, so a single experiment never silently becomes a habit.
  */
 export function preferenceDefaults(preferences: LearnedPreference[]): PreferenceDefaults {
+  const pace = strongest(preferences, "pace", PREFILL_MIN_HITS, 1)[0];
   const rhythm = strongest(preferences, "rhythm", PREFILL_MIN_HITS, 1)[0];
   const intention = strongest(preferences, "intention", PREFILL_MIN_HITS, 1)[0];
   const tone = strongest(preferences, "tone", PREFILL_MIN_HITS, 1)[0];
@@ -303,6 +302,7 @@ export function preferenceDefaults(preferences: LearnedPreference[]): Preference
     .map((note) => (note.length > MAX_PREFERENCE_KINDS_IN_TEXT ? `${note.slice(0, 120)}…` : note));
 
   return {
+    paceLevel: pace?.value === "gentle" || pace?.value === "balanced" || pace?.value === "active" ? pace.value : undefined,
     planningStyle: rhythm?.value === "structured" || rhythm?.value === "flexible" ? rhythm.value : undefined,
     intention: intention?.value,
     colorTone: tone?.value,
@@ -311,7 +311,7 @@ export function preferenceDefaults(preferences: LearnedPreference[]): Preference
     foodPreferences: food?.label,
     notes,
     destinations: destinations.map((entry) => entry.value),
-    homeCities: strongest(preferences, "destination", 1, 5).map((entry) => entry.value),
+    homeCities: strongest(preferences, "home", 1, 5).map((entry) => entry.value),
     established: preferences.some((entry) => entry.hits >= PREFILL_MIN_HITS),
   };
 }

@@ -11,8 +11,8 @@ type LoginMode = "password" | "code" | "register" | "reset";
 
 function LoginForm() {
   const params = useSearchParams();
-  const rawNext = params.get("next") ?? "/";
-  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") && !/[\\\u0000-\u001f\u007f]/.test(rawNext) ? rawNext : "/";
+  const rawNext = params.get("next") ?? "/app";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") && !/[\\\u0000-\u001f\u007f]/.test(rawNext) ? rawNext : "/app";
   const [mode, setMode] = useState<LoginMode>(() => params.get("mode") === "reset" ? "reset" : params.get("mode") === "register" ? "register" : "password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -88,7 +88,7 @@ function LoginForm() {
       const payload = await response.json() as { error?: string; next?: string };
       if (!response.ok) throw new Error(payload.error || "登录没有完成。");
       setPassword(""); setConfirmation("");
-      window.location.assign(payload.next || "/");
+      window.location.assign(payload.next || "/app");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "登录没有完成。"); }
     finally { setBusy(false); }
   }

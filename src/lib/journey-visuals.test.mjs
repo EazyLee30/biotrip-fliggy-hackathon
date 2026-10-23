@@ -1,3 +1,4 @@
+import * as protection from "./adjust/protection.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
@@ -14,7 +15,7 @@ function fixture() {
   sqlite.prepare("INSERT INTO journeys(id,account_id,title,status,draft_json,plan_json,plan_draft_json) VALUES(?,?,?,'planned',?,?,?)").run(id, account, "杭州", draft, plan, draft);
   const db = { prepare(sql) { const statement = sqlite.prepare(sql); let args = []; return { bind(...values) { args = values; return this; }, async first() { return statement.get(...args) ?? null; }, async run() { return statement.run(...args); } }; } };
   const journeys = loadModule("lib/journeys.ts", {
-    "@/lib/database": { getDatabase: () => db }, "@/lib/preferences": {}, "@/lib/itinerary-edit": loadModule("lib/itinerary-edit.ts", { "./planner-input": loadModule("lib/planner-input.ts") }),
+    "@/lib/database": { getDatabase: () => db }, "@/lib/preferences": {}, "@/lib/itinerary-edit": loadModule("lib/itinerary-edit.ts", { "./adjust/protection": protection, "./planner-input": loadModule("lib/planner-input.ts") }),
   });
   let calls = 0, concurrent = false;
   const api = loadModule("lib/journey-visuals.ts", {

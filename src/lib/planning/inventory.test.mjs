@@ -1,3 +1,4 @@
+import * as searchRouting from "../travel-search-routing.ts";
 import * as adjustPrompts from "./adjust-prompts.ts";
 import * as adjustHealth from "./adjust-health.ts";
 import assert from "node:assert/strict";
@@ -5,14 +6,14 @@ import { test } from "node:test";
 import { loadModule, plain } from "../test-support/module-loader.mjs";
 
 const places = loadModule("lib/places.ts");
-const skill = loadModule("lib/planning/inventory.ts", { "@/lib/places": places });
+const skill = loadModule("lib/planning/inventory.ts", { "@/lib/places": places, "../travel-search-routing": searchRouting });
 const contract = loadModule("lib/planning/contract.ts");
 const verifiedSource = { name: "真实检索来源", category: "景点与体验", url: "https://example.com/verified", price: null };
 function worker(searchFlyai) {
   return loadModule("lib/planning/providers/bailian-model.ts", {
     "@/lib/places": places, "@/lib/upstream-response": {}, "@/lib/bailian-output": {},
     "@/lib/flyai": { searchFlyai }, "../adjust-prompts": adjustPrompts, "../adjust-health": adjustHealth, "../prompts": {}, "../schema": {},
-    "../validation": {}, "../contract": contract,
+    "../validation": {}, "../contract": contract, "../inventory": skill,
   });
 }
 const trip = { originCity: "上海", destinationCity: "亚龙湾", departureDate: "2026-10-16", returnDate: "2026-10-17", requestedServices: ["flights", "attractions"] };
@@ -25,7 +26,7 @@ test("both inventory transports search the area's transport city for flights and
   const calls = [];
   await worker(async (tool, args) => { calls.push({ tool, args }); return { sources: [verifiedSource] }; }).flyaiInventory(signal, trip, trip.departureDate);
   assert.equal(calls.find(call => call.tool === "search_flight").args.destination, "三亚");
-  assert.match(calls.find(call => call.tool === "fliggy_fast_search").args.query, /亚龙湾/);
+  assert.equal(calls.find(call => call.tool === "search_poi").args.cityName, "亚龙湾");
 });
 
 test("an unmapped area never goes to the flight API and its missing coverage is reported", async () => {

@@ -4,9 +4,9 @@ import { Icon, type IconName } from "../zen-ui";
 import type { AppView } from "./app-navigation";
 import styles from "./app-dock.module.css";
 
-const entries: Array<{ view: "today" | "adjust" | "explore" | "profile"; label: string; icon: IconName }> = [
-  { view: "today", label: "行程", icon: "calendar" },
-  { view: "adjust", label: "调整", icon: "tune" },
+const entries: Array<{ view: "today" | "itinerary" | "explore" | "profile"; label: string; icon: IconName }> = [
+  { view: "today", label: "今天", icon: "sun" },
+  { view: "itinerary", label: "行程", icon: "calendar" },
   { view: "explore", label: "发现", icon: "compass" },
   { view: "profile", label: "我的", icon: "person" },
 ];

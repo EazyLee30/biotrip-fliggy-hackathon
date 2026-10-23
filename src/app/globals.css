@@ -1013,3 +1013,13 @@ button:focus-visible, a:focus-visible { outline: 3px solid #7db49a; outline-offs
 .password-settings-form { display: grid; gap: 14px; }
 .password-settings-form .account-secondary-actions { margin-top: 0; }
 .profile-password { border-top: 1px solid #dfe6de; margin-top: 26px; }
+
+/* Keep focused fields readable without iOS focus zoom; pinch zoom stays available. */
+@media (max-width: 699px), (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="hidden"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import type { KeyboardEvent } from "react";
 import { parseSchedule, scheduleError } from "@/lib/planner-input";
 import { Icon, Modal } from "../zen-ui";
-import { decodeReservationName, removeReservation, replaceReservation, reservationDates, reservationNameError, reservationTextError } from "./reservations";
+import { decodeReservationName, recoverReservationCards, removeReservation, replaceReservation, reservationDates, reservationNameError, reservationTextError } from "./reservations";
 import type { ReservationDraft } from "./reservations";
 import styles from "./reservation-editor.module.css";
 
@@ -116,14 +116,12 @@ export function ReservationEditor({ value, onChange, tripStart, tripEnd, disable
   const [editingError, setEditingError] = useState("");
   const [pendingHour, setPendingHour] = useState(false);
   const [pendingMinute, setPendingMinute] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkText, setBulkText] = useState("");
-  const [bulkOriginal, setBulkOriginal] = useState("");
-  const [bulkError, setBulkError] = useState("");
+  const [recovery, setRecovery] = useState<{ original: string; value: string; totalCount: number; recoveredCount: number; pendingCount: number } | null>(null);
+  const [recoveryConfirmed, setRecoveryConfirmed] = useState(false);
+  const [recoveryError, setRecoveryError] = useState("");
   const id = useId();
   const close = useCallback(() => { setEditing(null); setEditingError(""); }, []);
-  const rawError = value.length > 6000 ? "原预约内容超过 6000 个字符，请先修复。" : scheduleError(value);
-  const displayError = error || rawError;
+  const rawError = value.length > 6000 || Boolean(scheduleError(value));
   const canAdd = !disabled && !rawError && Boolean(dates.length) && (items?.length ?? 0) < 30;
   const nameError = editing?.activity ? reservationNameError(editing.activity, editing.location) : null;
 
@@ -158,19 +156,27 @@ export function ReservationEditor({ value, onChange, tripStart, tripEnd, disable
     if (result.error !== null) { setError(result.error); return; }
     onChange(result.value); setError("");
   }
-  function toggleBulk() {
-    if (disabled) return;
-    if (!bulkOpen) { setBulkText(value); setBulkOriginal(value); setBulkError(""); }
-    setBulkOpen(!bulkOpen);
+  function beginRecovery() {
+    setRecovery({ original: value, ...recoverReservationCards(value, tripStart, tripEnd) });
+    setRecoveryConfirmed(false); setRecoveryError("");
   }
-  function applyBulk() {
-    if (disabled) return;
-    if (value !== bulkOriginal) { setBulkError("预约内容已更新，请关闭后重新打开批量编辑。未确认内容仍保留。"); return; }
-    const validation = reservationTextError(bulkText, tripStart, tripEnd);
-    if (validation) { setBulkError(validation); return; }
-    onChange(bulkText.trim()); setBulkOpen(false); setError("");
+  function confirmRecovery() {
+    if (!recovery || disabled || !recoveryConfirmed) return;
+    if (recovery.original !== value) { setRecoveryError("旧预约刚刚更新，请返回后再核对一次。"); return; }
+    if (reservationTextError(recovery.value, tripStart, tripEnd)) { setRecoveryError("请先在卡片里确认每项安排的旅行日期。"); return; }
+    onChange(recovery.value); setRecovery(null); setError("");
   }
 
+  if (recovery) {
+    const count = parseSchedule(recovery.value)?.length ?? 0;
+    return <section className={styles.editor} aria-label="重新核对旧预约">
+      <div className={styles.recoveryIntro}><h3>把旧安排，重新核对一下</h3><p>原来有 {recovery.totalCount} 项安排，已带入 {recovery.recoveredCount} 项。{recovery.pendingCount ? `还有 ${recovery.pendingCount} 项需要你重新添加或确认不保留。` : "你可以逐项核对时间。"}</p><small>确认前，原来的预约资料会完整保留。</small></div>
+      <ReservationEditor value={recovery.value} tripStart={tripStart} tripEnd={tripEnd} disabled={disabled} onChange={next => { setRecovery(current => current ? { ...current, value: next } : null); setRecoveryConfirmed(false); }} />
+      <label className={styles.recoveryConfirm}><input type="checkbox" checked={recoveryConfirmed} disabled={disabled} onChange={event => setRecoveryConfirmed(event.target.checked)} /><span>我已核对旧安排，确认{count ? `只保留以上 ${count} 项活动卡片` : "暂不保留旧预约"}。</span></label>
+      {recoveryError && <p className={styles.error} role="alert">{recoveryError}</p>}
+      <div className={styles.actions}><button type="button" className={styles.secondary} disabled={disabled} onClick={() => setRecovery(null)}>保留原资料</button><button type="button" className={styles.primary} disabled={disabled || !recoveryConfirmed} onClick={confirmRecovery}>{count ? `确认使用这 ${count} 项安排` : "确认暂不保留预约"}</button></div>
+    </section>;
+  }
   return <section className={styles.editor} aria-label="已确定的活动与预约">
     <div className={styles.listHead}><div><h3>已确定的活动与预约</h3><p>点选日期与时间，保留你已经安排好的活动。</p></div><span>{items?.length ?? 0}/30</span></div>
     {items?.length ? <ul className={styles.list}>{items.map((item, index) => {
@@ -182,12 +188,10 @@ export function ReservationEditor({ value, onChange, tripStart, tripEnd, disable
         <button type="button" className={styles.delete} aria-label={`删除预约：${item.name}`} disabled={disabled} onClick={() => remove(index)}><Icon name="trash" size={17} /></button>
       </li>;
     })}</ul> : !rawError ? <div className={styles.empty}><Icon name="calendar" size={22} /><span>还没有添加预约</span><small>如入住、交通或已约好的活动</small></div> : null}
-    {displayError ? <p className={styles.error} role="alert">{displayError} 原有内容仍然保留。</p> : null}
-    <button type="button" className={styles.add} disabled={!canAdd} onClick={() => open(null)}><Icon name="plus" size={18} />{(items?.length ?? 0) >= 30 ? "已达到 30 项上限" : dates.length ? "添加活动或预约" : "请先选择旅行日期"}</button>
+    {error ? <p className={styles.error} role="alert">{error}</p> : null}
+    {rawError ? <div className={styles.recoveryIntro}><p>旧预约资料已保留，核对活动卡片后就可以继续。</p><button type="button" className={styles.add} disabled={disabled || !dates.length} onClick={beginRecovery}><Icon name="calendar" size={18} />{dates.length ? "重新核对预约" : "请先选择旅行日期"}</button></div> : <button type="button" className={styles.add} disabled={!canAdd} onClick={() => open(null)}><Icon name="plus" size={18} />{(items?.length ?? 0) >= 30 ? "已达到 30 项上限" : dates.length ? "添加活动或预约" : "请先选择旅行日期"}</button>}
     <p className={styles.note}>未写日期的旧预约按抵达首日显示。时间均为目的地当地时间。{!tripEnd ? "返程未定时仅可选抵达首日；要安排其他日期，请先补充旅行返程日期。" : ""}</p>
-    <button type="button" className={styles.bulkToggle} onClick={toggleBulk} disabled={disabled} aria-expanded={bulkOpen} aria-controls={`${id}-bulk`}>{rawError ? "修复原有预约文本" : "批量粘贴或编辑文本"}<span aria-hidden="true">{bulkOpen ? "−" : "+"}</span></button>
-    {bulkOpen ? <div className={styles.bulk} id={`${id}-bulk`}><label htmlFor={`${id}-text`}>每行一项，未写日期按抵达首日</label><textarea id={`${id}-text`} value={bulkText} disabled={disabled} rows={5} onChange={(event) => { setBulkText(event.target.value); setBulkError(""); }} placeholder={`13:00 活动名称\n${tripStart || "YYYY-MM-DD"} 15:00 活动名称 | 灵活`} aria-describedby={`${id}-bulk-help`} /><small id={`${id}-bulk-help`}>也支持「13:00 | 活动名称 | 固定/灵活」。最多 30 项、6000 字；确认后保存。</small>{bulkError ? <p className={styles.error} role="alert">{bulkError}</p> : null}<div className={styles.actions}><button type="button" className={styles.secondary} onClick={() => setBulkOpen(false)}>取消</button><button type="button" className={styles.primary} disabled={disabled} onClick={applyBulk}>确认批量内容</button></div></div> : null}
-    {editing ? <Modal title={editing.index === null ? "添加活动或预约" : "编辑活动或预约"} onClose={close} busy={disabled} footer={<div className={styles.actions}><button type="button" className={styles.secondary} onClick={close}>取消</button><button type="button" className={styles.primary} disabled={disabled || pendingHour || pendingMinute} onClick={confirm}>{pendingHour || pendingMinute ? "正在选择时间…" : `确认${editing.index === null ? "添加" : "修改"}`}</button></div>}>
+    {editing ? <Modal hideCloseButton title={editing.index === null ? "添加活动或预约" : "编辑活动或预约"} onClose={close} busy={disabled} footer={<div className={styles.actions}><button type="button" className={styles.secondary} onClick={close}>取消</button><button type="button" className={styles.primary} disabled={disabled || pendingHour || pendingMinute} onClick={confirm}>{pendingHour || pendingMinute ? "正在选择时间…" : `确认${editing.index === null ? "添加" : "修改"}`}</button></div>}>
       <div className={styles.form}>
         <div className={styles.fieldHead}><strong>日期</strong><span>{editing.date ? dateLabel(editing.date) : "请明确点选预约日期"} · 目的地当地</span></div>
         {dates.length ? <div className={styles.dateStrip} role="group" aria-label="旅程内预约日期">{dates.map((date) => <button type="button" key={date} className={`${styles.dateChip} ${date === editing.date ? styles.selectedDate : ""}`} aria-pressed={date === editing.date} aria-label={dateLabel(date)} disabled={disabled} onClick={() => update({ date })}><small>{date.slice(0, 4)}年</small><strong>{Number(date.slice(5, 7))}月{Number(date.slice(8))}日</strong><span>{weekday(date)}</span></button>)}</div> : <p className={styles.error}>旅行日期已变化，请取消后重新选择旅行日期。</p>}

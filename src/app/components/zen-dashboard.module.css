@@ -1,4 +1,4 @@
-.app { --z-ink: #273830; --z-muted: #637166; --z-green: #2f6654; --z-mint: #e7eee5; --z-canvas: #f7f6f1; --z-inset: #edf0e9; min-height: 100dvh; background: var(--z-canvas); color: var(--z-ink); font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 15px; line-height: 1.6; }
+.app { --z-ink: #203d35; --z-muted: #677965; --z-green: #234a3b; --z-mint: #e7ecdd; --z-canvas: #f8f7f2; --z-inset: #edf0e9; min-height: 100dvh; background: var(--z-canvas); color: var(--z-ink); font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 16px; line-height: 1.6; }
 .shareCoverChoices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-block: 12px; }
 .shareCoverChoices button { min-width: 0; min-height: 94px; border: 2px solid transparent; border-radius: 12px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 5px; cursor: pointer; }
 .shareCoverChoices button[aria-pressed="true"] { border-color: #2f6654; box-shadow: 0 0 0 2px #e7eee5; }
@@ -30,8 +30,8 @@
 .headerTitle small { color: #3d4a42; font-size: 11px; }
 .headerTitle svg { color: var(--z-green); }
 .headerActions, .inline { display: flex; align-items: center; gap: 8px; }
-.avatar { border: 0; border-radius: 50%; width: 32px; height: 32px; background: var(--z-green); color: white; display: grid; place-items: center; flex: 0 0 auto; }
-.iconButton { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: transparent; border: 0; color: inherit; flex: 0 0 auto; }
+.avatar { border: 0; border-radius: 50%; width: 44px; height: 44px; background: var(--z-green); color: white; display: grid; place-items: center; flex: 0 0 auto; }
+.iconButton { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: transparent; border: 0; color: inherit; flex: 0 0 auto; }
 .iconButton:hover { background: #edf0e9; }
 .content { width: min(100%, 1080px); margin: 0 auto; padding: 0 20px 132px; }
 .stack { display: flex; flex-direction: column; gap: 24px; }
@@ -167,6 +167,9 @@
 .modal { width: min(100%, 500px); min-height: 0; max-height: calc(var(--modal-viewport-height, 100dvh) - 40px); overflow: hidden; background: #f7f6f1; border: 1px solid #ffffffb0; padding: 0; border-radius: 24px; display: flex; flex-direction: column; box-shadow: 0 24px 80px #27383025; transition: transform 220ms ease; }
 .modal[data-dragging="true"] { transform: translateY(var(--modal-offset, 0px)); transition: none; }
 .modalHandle { display: none; }
+.modalInteractiveHandle { display: flex; align-items: center; justify-content: center; height: 32px; flex: 0 0 32px; touch-action: none; cursor: grab; user-select: none; }
+.modalInteractiveHandle > span { width: 44px; height: 4px; background: #b5c2bd; border-radius: 999px; }
+.modalInteractiveHandle:focus-visible { outline: 2px solid #305b49; outline-offset: -4px; border-radius: 8px; }
 .modalHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: 0 0 auto; padding: 24px 24px 18px; }
 .modalHeader h2 { min-width: 0; overflow-wrap: anywhere; }
 .modalHeader button { flex: 0 0 auto; }
@@ -610,3 +613,14 @@
 
 /* Bound imagery sits behind the travel title. */
 .journeyCover h1, .journeyCover p, .journeyCover small { color: #fff; text-shadow: 0 1px 12px #07140f99; }
+
+@media (max-width: 699px) { .modalHeader > .iconButton { display: grid; min-width: 44px; min-height: 44px; } }
+
+.sensorySwitch { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; border:1px solid #d9e2d7; border-radius:16px; }
+.sensorySwitch > span { display:grid; gap:6px; }
+.sensorySwitch strong { font-size:14px; }
+.sensorySwitch small { font-size:12px; color:#71806f; line-height:1.6; }
+
+.detailContent { padding-bottom:max(32px,env(safe-area-inset-bottom)); }
+
+.app.detailApp { padding-bottom:0; }

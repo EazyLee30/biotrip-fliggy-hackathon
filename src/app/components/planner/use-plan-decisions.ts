@@ -25,7 +25,8 @@ export function usePlanDecisions({ alive, latestJourney, session, lockRef, block
     finally { lockRef.current = false; if (alive.current) setBusy(false); }
   }
   async function decideCandidate(action: "apply" | "discard") {
-    if (!candidate) return;
+    if (!candidate) return false;
+    let decided = false;
     const selected = candidate;
     await run(async (target, current) => {
       if (selected.journeyId !== target.id) throw new Error("待确认方案属于另一段旅程，请先切换到对应旅程。");
@@ -34,8 +35,9 @@ export function usePlanDecisions({ alive, latestJourney, session, lockRef, block
       });
       if (!current()) return;
       if (payload.journey) { setPreviousPlan(target.plan ?? null); replaceJourney(payload.journey); fillDraft(payload.journey.draft); clearPendingReservations(payload.journey.id); }
-      setCandidate(null); setToast(action === "apply" ? "新方案已采用，原安排可从版本历史恢复。" : "已保留当前安排。");
+      decided = true; setCandidate(null); setToast(action === "apply" ? "新方案已采用，原安排可从版本历史恢复。" : "已保留当前安排。");
     });
+    return decided;
   }
   async function showVersions() {
     await run(async (target, current) => {

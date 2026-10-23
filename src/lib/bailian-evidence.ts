@@ -20,6 +20,7 @@ export type SafeToolObservation = {
   duplicate: boolean;
 };
 export type ToolEvidence = {
+  queryReceipts?: import("./travel-search-types").ToolReceipt[];
   webSearchCalls: number;
   successfulWebSearches: number;
   flyaiSearchCalls: number;
@@ -30,7 +31,7 @@ export type ToolEvidence = {
   /** Completed API queries whose data contained no usable named HTTPS source. */
   emptyFlyaiCategories: string[];
 };
-export type FlyaiEvidenceCommand = { command: string; category: string };
+export type FlyaiEvidenceCommand = { command: string; category: string; queryKey?: string; tool?: import("./travel-search-types").FlyaiTool; args?: Record<string, unknown> };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -117,7 +118,7 @@ function shellWords(command: string): string[] | null {
   }
   if (quote) return null;
   if (started) words.push(word);
-  if (words[0] === "DEBUG_FLYAI_MCP_URL=https://biotrip.ccwu.cc/api/flyai/mcp") words.shift();
+  if (words[0] === "DEBUG_FLYAI_MCP_URL=https://biotrip.eazylee.si/api/flyai/mcp") words.shift();
   if (words[0] === "timeout" && /^\d+[smh]?$/.test(words[1] ?? "")) words.splice(0, 2);
   if (words[0] === "/usr/local/bin/flyai") words[0] = "flyai";
   return words;
@@ -163,13 +164,14 @@ function apiSucceeded(payload: unknown) {
 // safe counters, error categories and original source URLs, never credentials.
 export function createToolEvidence(mode: EvidenceMode, allowedCommands?: readonly FlyaiEvidenceCommand[]) {
   const seen = new Set<string>();
-  const calls = new Map<string, { name: string; category: CommandCategory | null; sourceCategory: string }>();
+  const calls = new Map<string, { name: string; category: CommandCategory | null; sourceCategory: string; expected?: FlyaiEvidenceCommand; startedAt: number }>();
   const completedCalls = new Set<string>();
   const sources = new Set<string>();
   const flyaiSources = new Map<string, FlyaiSource>();
   const flyaiCategories = new Set<string>();
   const emptyFlyaiCategories = new Set<string>();
-  const expected = allowedCommands && new Map(allowedCommands.map((item) => [JSON.stringify(shellWords(item.command)), item.category]));
+  const expected = allowedCommands && new Map(allowedCommands.map((item) => [JSON.stringify(shellWords(item.command)), item]));
+  const queryReceipts = new Map<string, import("./travel-search-types").ToolReceipt>();
   let webSearchCalls = 0;
   let successfulWebSearches = 0;
   let flyaiSearchCalls = 0;
@@ -200,8 +202,14 @@ export function createToolEvidence(mode: EvidenceMode, allowedCommands?: readonl
       if (calls.has(callId)) return { ...observation, duplicate: true };
       const name = typeof data.name === "string" ? data.name : "";
       const category = name === "bash" ? commandCategory(data.arguments) : null;
-      const sourceCategory = expected?.get(JSON.stringify(shellWords(commandText(data.arguments)))) ?? "景点与旅行商品";
-      calls.set(callId, { name, category, sourceCategory });
+      const expectedQuery = expected?.get(JSON.stringify(shellWords(commandText(data.arguments))));
+      const sourceCategory = expectedQuery?.category ?? "景点与旅行商品";
+      calls.set(callId, { name, category, sourceCategory, expected: expectedQuery, startedAt: Date.now() });
+      if (expectedQuery?.queryKey && expectedQuery.tool) {
+        if (queryReceipts.has(expectedQuery.queryKey)) observation.failureCode = "FLYAI_DUPLICATE_QUERY";
+        else queryReceipts.set(expectedQuery.queryKey, { queryKey: expectedQuery.queryKey, tool: expectedQuery.tool, category: sourceCategory,
+          state: "unknown", executor: "agent_skill", sourceCount: 0, elapsedMs: 0, retrievedAt: new Date().toISOString() });
+      }
       observation.commandCategory = category;
       observation.isFlyaiSearch = category === "flyai_search";
       if (name === "web_search") {
@@ -252,15 +260,24 @@ export function createToolEvidence(mode: EvidenceMode, allowedCommands?: readonl
         collectFlyaiSources(isRecord(payload) ? payload.data : null, urls);
         observation.sourceUrlCount = urls.size;
         for (const url of urls) sources.add(url);
-        const retrieved = extractFlyaiSources(isRecord(payload) ? payload.data : null, call.sourceCategory);
+        const retrieved = extractFlyaiSources(isRecord(payload) ? payload.data : null, call.sourceCategory, 30, call.expected?.tool);
+        if (call.expected?.queryKey && call.expected.tool) queryReceipts.set(call.expected.queryKey, {
+          queryKey: call.expected.queryKey, tool: call.expected.tool, category: call.sourceCategory,
+          state: retrieved.length ? "completed" : "empty", executor: "agent_skill", sourceCount: retrieved.length,
+          elapsedMs: Date.now() - call.startedAt, retrievedAt: new Date().toISOString(),
+        });
         if (retrieved.length) emptyFlyaiCategories.delete(call.sourceCategory);
         else emptyFlyaiCategories.add(call.sourceCategory);
         for (const source of retrieved) {
-          if (flyaiSources.size < 30) flyaiSources.set(source.url, source);
+          if (flyaiSources.size < 30) flyaiSources.set(source.id ?? source.url, source);
         }
       } else if (!observation.failureCode) {
         observation.failureCode = "FLYAI_OUTPUT_UNVERIFIED";
       }
+      if (observation.failureCode && call.expected?.queryKey && call.expected.tool) queryReceipts.set(call.expected.queryKey, {
+        queryKey: call.expected.queryKey, tool: call.expected.tool, category: call.sourceCategory, state: "failed", executor: "agent_skill",
+        sourceCount: 0, elapsedMs: Date.now() - call.startedAt, retrievedAt: new Date().toISOString(), code: observation.failureCode,
+      });
     }
     return observation;
   };
@@ -270,6 +287,7 @@ export function createToolEvidence(mode: EvidenceMode, allowedCommands?: readonl
     flyaiSources: [...flyaiSources.values()],
     flyaiCategories: [...flyaiCategories],
     emptyFlyaiCategories: [...emptyFlyaiCategories],
+    ...(queryReceipts.size ? { queryReceipts: [...queryReceipts.values()] } : {}),
   });
   return { accept, result };
 }

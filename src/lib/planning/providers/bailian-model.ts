@@ -1,7 +1,8 @@
 import { readBoundedUpstream } from "@/lib/upstream-response";
 import { parseJsonText, parsePlan, safeHttpsUrl } from "@/lib/bailian-output";
 import { searchFlyai, type FlyaiSource } from "@/lib/flyai";
-import { transportCityFor } from "@/lib/places";
+import { skillInventoryQueries } from "../inventory";
+import type { TravelQuery, ToolReceipt } from "../../travel-search-types";
 import { adjustmentPrompt, reliefQueries } from "../adjust-prompts";
 import { abstractHealth } from "../adjust-health";
 import { composePlanPrompt, healthInsightPrompt, localResearchPrompt } from "../prompts";
@@ -63,7 +64,7 @@ async function modelRequest(
       headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
       // `store:false` keeps conversation state off the provider's servers.
       body: JSON.stringify({ store: false, ...body }),
-      cache: "no-store", redirect: "error",
+      cache: "no-store", redirect: "manual",
       signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
     });
   } catch (error) {
@@ -216,17 +217,12 @@ export function createModelProvider(transport: ModelTransport): PlanningProvider
      * the search signature never depends on a Vault placeholder.
      */
     async flyaiInventory(ctx: StageContext): Promise<FlyaiInventory> {
-      return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate, ctx.inventoryAvailable);
+      return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate, ctx.inventoryAvailable, skillInventoryQueries(ctx));
     },
 
     async reliefInventory(ctx) {
-      const queries = reliefQueries(ctx);
-      const results = await Promise.allSettled(queries.map(query => searchFlyai("fliggy_fast_search", { query: query.query }, ctx.signal, query.category)));
-      ctx.signal.throwIfAborted();
-      const sources = results.flatMap(result => result.status === "fulfilled" ? result.value.sources : []).slice(0, 24);
-      if (!sources.length) throw new PlannerError("relief_inventory", "search", 502, "NO_VERIFIED_FLYAI_SOURCE", null, true);
-      return { sources, searches: queries.length, failedSearches: results.filter(result => result.status === "rejected").length,
-        failedCategories: results.flatMap((result, index) => result.status === "rejected" || !result.value.sources.length ? [queries[index].category] : []), executor: "worker" };
+      const selection = skillInventoryQueries({ ...ctx, searchIntents: ctx.searchIntents ?? reliefQueries(ctx).map(query => ({ kind: "keyword" as const, query: query.query })) });
+      return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate, ctx.inventoryAvailable, selection);
     },
 
     async composeAdjustments(ctx, gathered) {
@@ -315,62 +311,38 @@ export async function flyaiInventory(
   trip: StageContext["input"]["trip"] & object,
   arrivalDate: string,
   onVerified?: StageContext["inventoryAvailable"],
+  selected?: { queries: TravelQuery[]; unsearchedCategories: string[] },
+  allowEmpty = false,
 ): Promise<FlyaiInventory> {
-  const services = trip.requestedServices;
-  const searches: Promise<{ sources: FlyaiSource[] }>[] = [];
-  const categories: string[] = [];
-  const unavailable: string[] = [];
-  const requests = [
-    { key: "hotels", label: "酒店", category: "住宿" },
-    { key: "attractions", label: "景点门票", category: "景点与体验" },
-    { key: "travel_insurance", label: "旅游保险", category: "旅行服务" },
-    { key: "transport", label: "当地交通 接送", category: "交通" },
-  ].filter((service) => services.includes(service.key));
-  for (const service of requests) {
-    categories.push(service.category);
-    searches.push(searchFlyai("fliggy_fast_search", { query: `${trip.destinationCity} ${arrivalDate} ${service.label}` }, signal, service.category));
-  }
-  if (services.includes("flights")) {
-    const origin = transportCityFor(trip.originCity);
-    const destination = transportCityFor(trip.destinationCity);
-    if (origin && destination && origin !== destination) {
-      categories.push("航班");
-      searches.push(searchFlyai("search_flight", {
-        origin, destination,
-        depDate: trip.departureDate,
-        ...(trip.returnDate ? { backDate: trip.returnDate } : {}),
-        limit: 5,
-      }, signal, "航班"));
-    } else unavailable.push(origin && origin === destination ? "航班（出发地与目的地位于同一交通城市）" : "航班（区域尚未确定交通城市）");
-  }
-  if (!searches.length) {
-    categories.push("景点与体验");
-    searches.push(searchFlyai("fliggy_fast_search", { query: `${trip.destinationCity} 景点门票` }, signal, "景点与体验"));
-  }
-  const results = await Promise.allSettled(searches.map(async search => {
-    const result = await search;
-    if (!signal.aborted && result.sources.length && onVerified) {
-      try { onVerified(result.sources); } catch { /* Preview delivery is optional. */ }
+  const selection = selected ?? skillInventoryQueries({ input: { trip }, timing: { arrivalDate } });
+  const receipts: ToolReceipt[] = [];
+  const results = await Promise.allSettled(selection.queries.map(async query => {
+    const start = Date.now();
+    try {
+      const result = await searchFlyai(query.tool, query.args, signal, query.category);
+      receipts.push({ queryKey: query.queryKey, tool: query.tool, category: query.category, state: result.sources.length ? "completed" : "empty",
+        executor: "worker", sourceCount: result.sources.length, elapsedMs: Date.now() - start, retrievedAt: new Date().toISOString() });
+      if (!signal.aborted && result.sources.length && onVerified) { try { onVerified(result.sources); } catch { /* Preview is optional. */ } }
+      return result;
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : "FLYAI_SEARCH_FAILED";
+      receipts.push({ queryKey: query.queryKey, tool: query.tool, category: query.category, state: signal.aborted ? "unknown" : "failed",
+        executor: "worker", sourceCount: 0, elapsedMs: Date.now() - start, retrievedAt: new Date().toISOString(), code });
+      throw error;
     }
-    return result;
   }));
-  const successes = results.filter((result): result is PromiseFulfilledResult<{ sources: FlyaiSource[] }> => result.status === "fulfilled");
-  if (!successes.length) {
-    const failure = results.find((result) => result.status === "rejected");
-    throw failure?.status === "rejected" ? failure.reason : new Error("NO_VERIFIED_FLYAI_SEARCH");
-  }
+  signal.throwIfAborted();
   const sources = new Map<string, FlyaiSource>();
-  for (const result of successes) {
-    for (const source of result.value.sources) if (sources.size < 30) sources.set(source.url, source);
+  for (const result of results) if (result.status === "fulfilled") {
+    for (const source of result.value.sources) if (sources.size < 30) sources.set(source.id ?? source.url, source);
   }
-  if (!sources.size) throw new PlannerError("flyai_inventory", "flyai_search", 502, "NO_VERIFIED_FLYAI_SOURCE");
-  return {
-    sources: [...sources.values()],
-    searches: results.length,
-    failedSearches: results.filter((result) => result.status === "rejected" || !result.value.sources.length).length,
-    failedCategories: [...unavailable, ...results.flatMap((result, index) => result.status === "rejected" || !result.value.sources.length ? [categories[index]] : [])],
-    executor: "worker",
-  };
+  if (!sources.size && !allowEmpty) {
+    const failure = results.find(result => result.status === "rejected");
+    if (results.length && results.every(result => result.status === "rejected") && failure?.status === "rejected") throw failure.reason;
+    throw new PlannerError("flyai_inventory", "flyai_search", 502, "NO_VERIFIED_FLYAI_SOURCE");
+  }
+  return { sources: [...sources.values()], searches: results.length, failedSearches: receipts.filter(r => r.state !== "completed").length,
+    failedCategories: [...selection.unsearchedCategories, ...receipts.filter(r => r.state !== "completed").map(r => r.category)], receipts, executor: "worker" };
 }
 
 export { PlannerError };

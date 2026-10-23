@@ -73,5 +73,11 @@
 .primary { flex: 1; color: #fff; background: #006948; border: 1px solid #006948; }
 .secondary { color: #4f6058; background: #fff; border: 1px solid #dce4df; }
 .primary:hover:not(:disabled) { background: #00855d; }
+.recoveryIntro { display:grid; gap:10px; color:#4f6058; }
+.recoveryIntro h3 { font-size:18px; font-weight:500; margin:0; }
+.recoveryIntro p { font-size:14px; line-height:1.8; margin:0; }
+.recoveryIntro small { font-size:12px; color:#758175; line-height:1.7; }
+.recoveryConfirm { display:flex; align-items:flex-start; gap:10px; padding:14px 0; font-size:13px; line-height:1.7; color:#4f6058; }
+.recoveryConfirm input { flex-shrink:0; width:20px; height:20px; margin:1px 0 0; accent-color:#345d47; }
 @media (max-width: 699px) { .field input, .bulk textarea { font-size: 16px; } .itemTime { font-size: 16px; } .timeRow { padding-inline: 12px; } }
 @media (prefers-reduced-motion: reduce) { .wheel { scroll-behavior: auto; } }

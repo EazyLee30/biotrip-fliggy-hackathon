@@ -17,7 +17,7 @@ import { runPlanning } from "@/lib/planning/pipeline";
 import { STAGE_BY_NAME, PLAN_BUDGET_MS } from "@/lib/planning/stages";
 import { reservePlanning as reservePlanningLease } from "@/lib/planning/rate-limit";
 import type { TripTiming } from "@/lib/planning/contract";
-import { listLearnedPreferences, preferenceDefaults } from "@/lib/preferences";
+import { memoryUsage } from "@/lib/planning/service";
 import { resolveTripTiming } from "@/lib/trip-timing";
 
 export const runtime = "nodejs";
@@ -45,27 +45,6 @@ function isNearOrOngoingTrip(input: PlannerInput, timing: TripTiming) {
   return timing.departureInstant.getTime() <= now + 36 * 60 * 60 * 1000 && returnDayEnd >= now - 24 * 60 * 60 * 1000;
 }
 
-/** Learned defaults only ever extend what the traveller explicitly confirmed. */
-async function memoryUsage(accountId: string, input: PlannerInput, includeMemory: boolean) {
-  if (!includeMemory) return {
-    input: { ...input, profileMemoryNotes: "" },
-    memory: { applied: false, source: "none" as const, noteCount: 0 },
-  };
-  const preferences = await listLearnedPreferences(accountId);
-  const defaults = preferenceDefaults(preferences);
-  const learnedNotes = defaults.notes;
-  const combined = [input.profileMemoryNotes, learnedNotes.join("；")]
-    .filter(Boolean).join("\n").slice(0, 5000);
-  return {
-    input: { ...input, profileMemoryNotes: combined },
-    memory: {
-      applied: Boolean(input.profileMemoryNotes || learnedNotes.length),
-      source: (learnedNotes.length ? "learned" : input.profileMemoryNotes ? "profile" : "none") as "learned" | "profile" | "none",
-      noteCount: learnedNotes.length,
-    },
-  };
-}
-
 /**
  * Route adapter only: authenticate, validate, run the pipeline, persist.
  * All planning behaviour lives in `src/lib/planning`.
@@ -76,6 +55,7 @@ export async function POST(request: Request) {
   if (!account) return json({ error: "请先登录。" }, 401);
   let raw: unknown;
   try { raw = await readJourneyJson(request); } catch (error) { return journeyFailure(error); }
+  if (record(raw) && raw.reservationEdits !== undefined) return json({error:"预约改动需要预览后确认，请从重新规划继续。",code:"PLANNING_JOB_REQUIRED"},409);
   if (record(raw) && record(raw.trip)) {
     const dateError = planningDateError(raw.trip.departureDate, raw.trip.returnDate);
     if (dateError) return json({ error: dateError }, 400);
@@ -108,7 +88,10 @@ export async function POST(request: Request) {
     }
   }
   const fixedItems = schedule.filter((item) => item.fixed).map((item) => ({ ...item, date: item.date ?? timing.arrivalDate }));
-  const { input, memory } = await memoryUsage(account.id, parsed, raw.includeMemory !== false);
+  let usage: Awaited<ReturnType<typeof memoryUsage>>;
+  try { usage = await memoryUsage(account.id, parsed, raw.includeMemory !== false, journeyId ?? null); }
+  catch (error) { return journeyFailure(error); }
+  const { input, memory } = usage;
   const requestId = crypto.randomUUID();
 
   const controller = new AbortController();

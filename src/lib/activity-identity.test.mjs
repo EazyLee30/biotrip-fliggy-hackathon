@@ -1,7 +1,8 @@
+import * as protection from "./adjust/protection.ts";
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadModule, plain } from './test-support/module-loader.mjs';
-const edit=loadModule('lib/itinerary-edit.ts',{'./planner-input':loadModule('lib/planner-input.ts')});
+const edit=loadModule('lib/itinerary-edit.ts',{'./adjust/protection':protection,'./planner-input':loadModule('lib/planner-input.ts')});
 const diff=loadModule('lib/itinerary-diff.ts');
 const item=(time,name='散步')=>({date:'2026-10-12',time,name,detail:'自然步道',fixed:false});
 const generated=rows=>({source:'live',plan:{itinerary:rows}});

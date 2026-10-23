@@ -10,7 +10,7 @@ function nextDate(date: string) {
 }
 
 /** Clock times are planning buffers, never known flight or reservation times. */
-export function resolveTripTiming(input: Pick<PlannerInput, "trip">): TripTiming {
+export function resolveTripTiming(input: { trip: Pick<PlannerInput["trip"], "departureDate" | "departureTimezone" | "destinationTimezone" | "returnDate"> }): TripTiming {
   const departureLocal = localDateTimeAt(input.trip.departureDate, ASSUMED_DEPARTURE_HOUR);
   const departureInstant = localDateTimeAsInstant(departureLocal, input.trip.departureTimezone);
   let arrivalDate = input.trip.departureDate;

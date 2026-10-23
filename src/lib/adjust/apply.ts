@@ -24,5 +24,6 @@ export function applyAdjustments(current: JourneyGeneratedPlan, candidate: Adjus
   return { ...current, plan: { ...current.plan, itinerary: result.itinerary, places,
     adjustments: [...current.plan.adjustments, ...result.proposals.map(proposal => `已采纳：${proposal.title}`)].slice(-30) },
     ...(current.visuals || Object.keys(images).length ? { visuals: { cover: current.visuals?.cover ?? [], images } } : {}),
+    bodyAdjustment: { updatedAt: new Date().toISOString(), fatigueBefore: candidate.fatigueBefore ?? null, changes: result.proposals.map(proposal=>proposal.title) },
     manualAdjustment: { updatedAt: new Date().toISOString(), revision: (current.manualAdjustment?.revision ?? 0) + 1, operationCount: result.operations.length } };
 }

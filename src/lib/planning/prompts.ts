@@ -127,7 +127,7 @@ export function composePlanPrompt(
     "优先级：原样保留给定固定日程；所有新安排遵守 planning_date_window 和首日最早时间；在这两项约束内再满足用户选择的每日密度与休息偏好。",
     "规划日期仅为 planning_date_window.start_date 至 end_date（含首尾），每天都须覆盖。arrival_local 是目的地当地的暂估抵达缓冲时刻；首日所有非固定项的 time 必须大于或等于 first_day_earliest_time，休息、户外、抵达与自由探索也不能例外。不得从 arrival_utc 直接截取钟点作为当地时间。",
     `${timing.days > 14 ? "长途行程每天 1-2 项，细节不超过 40 字" : structured ? "结构化行程每天 3-6 项" : "灵活行程每天 2-4 项"}；给定固定日程优先，抵达当天不得安排在暂估抵达缓冲时间之前。每一天均须覆盖，不能把后几天省略。`,
-    "所有给定固定日程的日期、时间、名称原样保留，不得删除、移动或改名，也不得把新增活动标成 fixed=true 来绕过最早时间。若固定日程早于暂估抵达时间，保留原项并在 adjustments 提示核对交通安排。固定项见行程请求的 itinerary 字段。",
+    "所有给定固定日程的日期、时间、名称原样保留，不得删除、移动或改名；给定 durationMin 是真实预约时长，输出 duration_min 必须保持相同，并为这段完整时间及交通留白。带 progress 的活动已发生或已确认状态，保留其安排。不得把新增活动标成 fixed=true 来绕过最早时间。若固定日程早于暂估抵达时间，保留原项并在 adjustments 提示核对交通安排。固定项见行程请求的 itinerary 字段。",
     "flexible_itinerary 是用户填写的灵活安排，在可行时段优先纳入；允许调整时间，不得改成 fixed=true。因抵达或固定预约冲突而不采用时，在 adjustments 说明。",
     ...sourceRules,
     `health_data_basis=${gathered.health?.basis ?? "preferences_only"}：只有 whoop_recent 才可说参考了 WHOOP 近期记录；self_report 是用户自评；preferences_only 不得推断身体状态。当前数据不是对未来身体状态的预测。`,

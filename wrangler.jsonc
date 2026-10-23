@@ -8,13 +8,13 @@
   ],
   "routes": [
     {
-      "pattern": "biotrip.ccwu.cc",
+      "pattern": "biotrip.eazylee.si",
       "custom_domain": true
     }
   ],
   "vars": {
     "WHOOP_CLIENT_ID": "836f0014-7fb1-4a13-becb-ab4dab51a794",
-    "WHOOP_REDIRECT_URI": "https://biotrip.ccwu.cc/api/whoop/callback",
+    "WHOOP_REDIRECT_URI": "https://biotrip.eazylee.si/api/whoop/callback",
     "BAILIAN_REGION": "cn-beijing",
     // "auto" prefers Bailian Managed Agents (the competition requirement) and falls
     // chooses the model API only when agent configuration is incomplete. Runtime
@@ -34,7 +34,7 @@
     "BAILIAN_MOBILITY_ENVIRONMENT_ID": "env_ZWIzNGIxNGViN2Y4NDViNG",
     "BAILIAN_MOBILITY_MCP_SERVER_ID": "amap-maps",
     "BAILIAN_FLYAI_VAULT_ID": "vlt_01M3JPR3Y0VKX51QYZJMJYR9AR",
-    "RESEND_FROM_EMAIL": "BioTrip <login@notify.biotrip.ccwu.cc>"
+    "RESEND_FROM_EMAIL": "BioTrip <login@notify.biotrip.eazylee.si>"
   },
   "d1_databases": [
     {

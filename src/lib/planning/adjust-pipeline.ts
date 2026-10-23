@@ -1,4 +1,7 @@
-import type { Journey } from "../journey-types";
+import type { Journey, AdjustmentRecord } from "../journey-types";
+import { activityIsProtected } from "../adjust/protection";
+import type { SearchIntent } from "../travel-search-types";
+import { rankProposalsByOutcomes } from "../adjust/learning";
 import { bodyStatus } from "../adjust/status";
 import { dayLoad } from "../adjust/tags";
 import { instantProposals } from "../adjust/rules";
@@ -9,9 +12,9 @@ import { buildStageInput, normalizePlannerError, type HealthInsight, type Planni
 import { STAGE_BY_NAME } from "./stages";
 import type { RunPlanningRequest, StageReport } from "./pipeline";
 
-export type AdjustmentCandidate = { kind: "adjustment"; scope: AdjustScope; stance: Stance; proposals: Proposal[]; stages: StageReport[]; requestedAt: string };
+export type AdjustmentCandidate = { kind: "adjustment"; strategy?: "quick" | "enhanced"; checkIn?: AdjustmentRequest["checkIn"]; fatigueBefore?: number | null; scope: AdjustScope; stance: Stance; proposals: Proposal[]; stages: StageReport[]; requestedAt: string };
 export type AdjustmentGathered = { health: HealthInsight | null; sources: ReliefSource[]; instant: Proposal[]; scope: AdjustScope; stance: Stance; routes?: RouteFact[] };
-export type RunAdjustmentRequest = RunPlanningRequest & { journey: Journey; adjustment: AdjustmentRequest; provider?: PlanningProvider };
+export type RunAdjustmentRequest = RunPlanningRequest & { journey: Journey; adjustment: AdjustmentRequest; provider?: PlanningProvider; recentAdjustments?: AdjustmentRecord[] };
 
 /** Parallel advice remains optional: even total provider failure yields usable rules. */
 export async function runAdjustments(request: RunAdjustmentRequest): Promise<AdjustmentCandidate> {
@@ -26,7 +29,7 @@ export async function runAdjustments(request: RunAdjustmentRequest): Promise<Adj
     catch { /* Rules require no provider configuration. */ }
   }
   const status = bodyStatus({ checkIn: adjustment.checkIn, remaining: dayLoad(itinerary, adjustment.scope.date), timezoneShiftHours: journey.plan!.timezone.shiftMinutes / 60 });
-  const scopedItems = itinerary.filter(item => item.date! >= adjustment.scope.date && item.date! <= adjustment.scope.throughDate && (item.date !== adjustment.scope.date || item.time >= adjustment.scope.fromTime))
+  const scopedItems = itinerary.filter(item => !activityIsProtected(item,{date:adjustment.scope.date,time:adjustment.scope.fromTime}) && item.date! >= adjustment.scope.date && item.date! <= adjustment.scope.throughDate && (item.date !== adjustment.scope.date || item.time >= adjustment.scope.fromTime))
     .map(item => ({ id: item.id!, date: item.date!, time: item.time, name: item.name, fixed: item.fixed }));
   const scopedIds = new Set(scopedItems.map(item => item.id));
   const mobilityItems = itinerary.filter((item, index) => scopedIds.has(item.id!) || (itinerary[index + 1]?.date === item.date && scopedIds.has(itinerary[index + 1]?.id ?? "")))
@@ -34,13 +37,22 @@ export async function runAdjustments(request: RunAdjustmentRequest): Promise<Adj
   const preferences = { intention: input.intention, colorTone: input.colorTone, ambientPreferences: input.ambientPreferences, savedMemory: input.profileMemoryNotes, planningStyle: input.trip.planningStyle };
   const selfReport = { fatigue: adjustment.checkIn.fatigue, subjectiveStress: adjustment.checkIn.stress,
     bodyFeedback: adjustment.checkIn.tags.join(",") };
+  const needs=new Set(status.needs),city=trip.destinationCity ?? "",anchor=scopedItems[0]?.name ?? "";
+  const searchIntents:SearchIntent[]=[];
+  if(needs.has("comfort_food"))searchIntents.push({kind:"keyword",query:`${city} ${anchor} 附近清淡餐食`});
+  if(needs.has("quiet"))searchIntents.push({kind:"keyword",query:`${city} ${anchor} 安静茶馆`});
+  if(needs.has("relaxation"))searchIntents.push({kind:"keyword",query:`${city} ${anchor} 放松休息`});
+  function skip<T>(stage:PlanStage,fallback:T):Promise<T>{
+    const policy=STAGE_BY_NAME[stage];stages.push({stage,label:policy.label,status:"skipped",elapsedMs:0});
+    progress({stage,status:"skipped",message:"此刻的需求无需这项查询"});return Promise.resolve(fallback);
+  }
   async function execute<T>(stage: PlanStage, run: (ctx: StageContext) => Promise<T>, fallback: T): Promise<T> {
     const policy = STAGE_BY_NAME[stage], started = Date.now();
     progress({ stage, status: "running", message: `${policy.label}进行中` });
     const stageSignal = AbortSignal.any([planSignal, AbortSignal.timeout(policy.budgetMs)]);
-    const ctx: StageContext = { input: buildStageInput(policy.grants, { trip: input.trip, preferences, selfReport, itinerary: stage === "mobility" ? mobilityItems : scopedItems }),
+    const ctx: StageContext = { input: buildStageInput(policy.grants, { trip: input.trip, preferences, selfReport: stage === "compose_adjustments" ? {...selfReport, moodFeedback:adjustment.instruction} : selfReport, itinerary: stage === "mobility" ? mobilityItems : scopedItems }),
       accountId: request.accountId, requestId: request.requestId, signal: stageSignal, progress, timing: request.timing,
-      fixedItems: request.fixedItems, includeWhoop: request.includeWhoop, isNearOrOngoingTrip: request.isNearOrOngoingTrip, sessionCreated: request.sessionCreated };
+      searchIntents, fixedItems: request.fixedItems, includeWhoop: request.includeWhoop, isNearOrOngoingTrip: request.isNearOrOngoingTrip, sessionCreated: request.sessionCreated };
     try {
       const value = await (request.checkpoint ? request.checkpoint(stage, () => run(ctx)) : run(ctx));
       stageSignal.throwIfAborted();
@@ -56,7 +68,7 @@ export async function runAdjustments(request: RunAdjustmentRequest): Promise<Adj
     }
   }
   const [interpretedHealth, inventory, local, mobility] = await Promise.all([
-    execute("health_insight", async ctx => {
+    request.includeWhoop && request.isNearOrOngoingTrip ? execute("health_insight", async ctx => {
       if (!provider) throw new Error("PROVIDER_NOT_CONFIGURED");
       if (request.includeWhoop && request.isNearOrOngoingTrip) {
         const whoop = await import("../whoop-core");
@@ -64,19 +76,19 @@ export async function runAdjustments(request: RunAdjustmentRequest): Promise<Adj
       }
       // Raw records are held only inside this callback, never in checkpoints.
       return provider.healthInsight(ctx);
-    }, null),
-    execute("relief_inventory", async ctx => {
+    }, null) : skip("health_insight",null),
+    searchIntents.length ? execute("relief_inventory", async ctx => {
       if (!provider?.reliefInventory) throw new Error("RELIEF_PROVIDER_NOT_CONFIGURED");
       return provider.reliefInventory(ctx);
-    }, null),
-    execute("local_research", async ctx => {
+    }, null) : skip("relief_inventory",null),
+    needs.has("quiet") ? execute("local_research", async ctx => {
       if (!provider) throw new Error("PROVIDER_NOT_CONFIGURED");
       return provider.localResearch(ctx);
-    }, null),
-    execute("mobility", async ctx => {
+    }, null) : skip("local_research",null),
+    needs.has("less_walking") ? execute("mobility", async ctx => {
       if (!provider?.mobility) throw new Error("MOBILITY_AGENT_NOT_CONFIGURED");
       return provider.mobility(ctx);
-    }, null),
+    }, null) : skip("mobility",null),
   ]);
   const sources: ReliefSource[] = [...(inventory?.sources ?? []).map(source => ({ ...source, kind: "fliggy_product" as const })),
     ...(local?.services ?? []).map(source => ({ name: source.name, url: source.sourceUrl, category: source.kind, kind: "reference" as const }))].slice(0, 30);
@@ -104,11 +116,11 @@ export async function runAdjustments(request: RunAdjustmentRequest): Promise<Adj
   }) }, { itinerary, trip, scope: adjustment.scope, sources, routes, allowWhoopSignals: false }).proposals
     .map(proposal => ({ ...proposal, id: `mobility:${proposal.id}` })) : [];
   const gathered: AdjustmentGathered = { health, sources, instant: healthRules, scope: adjustment.scope, stance: adjustment.stance, routes };
-  const raw = await execute("compose_adjustments", async ctx => {
+  const raw = await (sources.length || routes.length || health ? execute("compose_adjustments", async ctx => {
     if (!provider?.composeAdjustments) throw new Error("COMPOSER_NOT_CONFIGURED");
     return provider.composeAdjustments(ctx, gathered);
-  }, null);
+  }, null) : skip("compose_adjustments",null));
   const advisor = parseAdvisorProposals(raw, { itinerary, trip, scope: adjustment.scope, sources, routes, allowWhoopSignals: Boolean(health?.basis === "whoop_recent") }).proposals;
   signal.throwIfAborted();
-  return { kind: "adjustment", scope: adjustment.scope, stance: adjustment.stance, proposals: markConflicts(mergeProposals(mergeProposals(healthRules, mapAdvice), advisor), itinerary, trip, adjustment.scope), stages, requestedAt: new Date().toISOString() };
+  return { kind: "adjustment", strategy:"enhanced", checkIn:adjustment.checkIn, fatigueBefore: adjustment.checkIn.fatigue, scope: adjustment.scope, stance: adjustment.stance, proposals: rankProposalsByOutcomes(markConflicts(mergeProposals(mergeProposals(healthRules, mapAdvice), advisor), itinerary, trip, adjustment.scope),request.recentAdjustments ?? [],adjustment.scope.date), stages, requestedAt: new Date().toISOString() };
 }

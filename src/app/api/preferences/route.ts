@@ -1,3 +1,5 @@
+import { onboardingDefaults } from "@/lib/onboarding";
+import { listMemoryItems, memorySettings } from "@/lib/agent/memory";
 import {
   clearLearnedPreferences,
   forgetLearnedPreference,
@@ -14,7 +16,18 @@ export async function GET(request: Request) {
   try {
     const account = await journeyAccount(request);
     const preferences = await listLearnedPreferences(account.id);
-    return journeyResponse({ preferences, defaults: preferenceDefaults(preferences) });
+    const [memories,settings] = await Promise.all([listMemoryItems(account.id),memorySettings(account.id)]);
+    const learned=preferenceDefaults(preferences), initial=onboardingDefaults(memories);
+    // First-run choices seed defaults; later, repeated or explicitly updated
+    // preferences can replace them without making onboarding permanent.
+    const defaults = {
+      ...learned,
+      paceLevel: learned.paceLevel ?? initial.paceLevel,
+      homeCities: learned.homeCities.length ? learned.homeCities : initial.homeCities ?? [],
+      foodPreferences: learned.foodPreferences ?? initial.foodPreferences,
+      established: learned.established || initial.established,
+    };
+    return journeyResponse({ preferences, defaults: settings.useMemory ? defaults : preferenceDefaults([]) });
   } catch (error) { return journeyFailure(error); }
 }
 

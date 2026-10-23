@@ -1,0 +1,12 @@
+.heading { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:20px 0 4px; }
+.heading h1 { font-size:27px!important; margin:6px 0!important; }
+.heading p,.heading small { font-size:12px; color:#687b6b; }
+.heading > button { flex-shrink:0; display:flex; gap:5px; align-items:center; min-height:44px; border:0; background:none; color:#3d684e; font:inherit; font-size:12px; }
+.actions { display:flex; flex-wrap:wrap; gap:8px; }
+.actions button { display:flex; justify-content:center; align-items:center; gap:7px; min-height:44px; padding:10px 14px; border:1px solid #d9e2d4; border-radius:12px; background:#edf0e6; color:#34563f; font:inherit; font-size:13px; cursor:pointer; }
+.actions button:disabled { opacity:.5; cursor:default; }
+.pending { display:flex; justify-content:space-between; align-items:center; gap:16px; width:100%; padding:17px 19px; border:1px solid #cfdbc5; border-radius:16px; background:#e9efdf; color:#35533e; text-align:left; font:inherit; cursor:pointer; }
+.pending strong { font-size:15px; font-weight:550; }
+.pending small { display:block; margin-top:5px; font-size:12px; color:#65765c; }
+.history { display:grid; gap:14px; padding:20px 0; border-top:1px solid #dfe5d9; }
+.heading button:focus-visible,.actions button:focus-visible,.pending:focus-visible { outline:2px solid #2f6654; outline-offset:3px; }

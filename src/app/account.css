@@ -92,10 +92,6 @@
 .bio-service > div { display:grid; gap:2px; flex:1; min-width:0; }
 .bio-service strong { font-size:13px; font-weight:600; }
 .bio-service small { color:var(--bio-muted); font-size:11px; line-height:1.5; }
-.bio-switch { width:44px; min-width:44px; height:24px; border:0; border-radius:99px; background:#dce2f7; padding:2px; text-align:left; cursor:pointer; }
-.bio-switch span { display:block; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 3px #27383022; transition:transform .2s; }
-.bio-switch[aria-checked="true"] { background:var(--bio-green); }
-.bio-switch[aria-checked="true"] span { transform:translateX(20px); }
 .bio-service-link { flex:none; padding:5px 8px; border:0; background:#e7eee566; color:#006f67; border-radius:99px; font-family:inherit; font-size:10px; cursor:pointer; }
 .bio-garden { position:relative; display:flex; align-items:flex-end; min-height:112px; padding:16px; border-radius:12px; overflow:hidden; background:linear-gradient(120deg,#e7eee5,#005137); }
 .bio-garden img { object-fit:cover; }
@@ -136,7 +132,6 @@
 .bio-loading { display:grid; min-height:60dvh; place-items:center; color:var(--bio-green); font-size:14px; }
 @media (max-width:380px) { .bio-profile-topbar { padding:10px 20px; }.bio-card { padding:20px; }.bio-avatar { width:58px; height:58px; }.bio-identity-row { gap:12px; }.bio-identity-copy h1 { font-size:18px; }.bio-metric { padding:15px 12px; }.bio-metric > strong { font-size:30px; }.bio-service { gap:10px; padding:14px; }.bio-service-icon { width:36px; height:36px; }.bio-service strong { font-size:12px; }.bio-service small { font-size:10px; } }
 @media (min-width:800px) { .bio-profile-main { padding-top:16px; }.bio-profile-topbar { min-height:80px; }.bio-card { padding:28px; border-radius:20px; }.bio-metrics { gap:8px; }.bio-metric { padding:24px; }.bio-metric > strong { font-size:38px; } }
-@media (prefers-reduced-motion:reduce) { .bio-switch span { transition:none; } }
 
 .bio-city-picker { width:100%; min-height:48px; display:flex; align-items:center; gap:10px; border:1px solid transparent; padding:12px 14px; border-radius:12px; background:var(--bio-inset); color:var(--bio-green); text-align:left; font:inherit; cursor:pointer; }
 .bio-city-picker strong { flex:1; font-size:16px; font-weight:500; color:var(--bio-ink); }
@@ -161,3 +156,29 @@
 
 .bio-leave-actions { display:flex; gap:12px; flex-wrap:wrap; }
 .bio-leave-actions button { min-height:44px; padding:10px 14px; border:1px solid #d6e0d2; border-radius:12px; }
+
+/* Settings use one destination per screen, with comfortable mobile hit targets. */
+.bio-settings .bio-profile-main { gap:16px; max-width:640px; padding-top:12px; }
+.bio-settings-topbar { max-width:640px; gap:12px; }
+.bio-settings-topbar h1 { flex:1; font-size:22px; font-weight:650; outline:0; }
+.bio-settings-brand { font-size:10px; letter-spacing:.12em; color:var(--bio-muted); }
+.bio-back { width:44px; height:44px; flex:none; border:0; border-radius:50%; background:#e7eee5; color:var(--bio-green); font:32px/1 var(--sans); cursor:pointer; }
+.bio-settings .bio-identity-button { width:100%; text-align:left; border:0; cursor:pointer; font:inherit; padding:24px 20px; }
+.bio-identity-button h2 { font-size:22px; overflow-wrap:anywhere; }
+.bio-settings .bio-identity-copy p { margin-top:7px; font-size:12px; }
+.bio-settings .bio-settings-caption { margin:12px 4px -6px; color:var(--bio-muted); font-size:12px; }
+.bio-settings-list { display:grid; padding:0 16px; border-radius:20px; background:#fff; }
+.bio-setting-row { width:100%; display:flex; align-items:center; gap:14px; min-height:84px; padding:16px 0; border:0; border-bottom:1px solid #eef0e9; background:transparent; color:var(--bio-ink); text-align:left; font:inherit; cursor:pointer; }
+.bio-setting-row:last-child { border-bottom:0; }
+.bio-setting-icon { width:40px; height:40px; flex:none; display:grid; place-items:center; border-radius:14px; background:#eef3e9; color:var(--bio-green); }
+.bio-setting-copy { flex:1; min-width:0; display:grid; gap:5px; }
+.bio-setting-copy strong { font-size:15px; font-weight:550; }
+.bio-setting-copy small { color:var(--bio-muted); font-size:11px; line-height:1.5; }
+.bio-setting-chevron { color:#869188; font-size:24px; }
+.bio-settings-description { color:var(--bio-muted); font-size:13px; line-height:1.8; }
+.bio-settings-privacy { text-align:center; padding:12px; font-size:11px; color:var(--bio-muted); }
+.bio-settings .bio-editor { padding:0; }
+.bio-settings .bio-pace > button, .bio-settings .bio-preferences button { min-height:44px; font-size:12px; }
+.bio-settings .bio-save { position:sticky; bottom:calc(90px + env(safe-area-inset-bottom)); box-shadow:0 4px 20px #20362918; }
+.bio-settings button:focus-visible, .bio-settings a:focus-visible { outline:2px solid var(--bio-green); outline-offset:3px; }
+@media(max-width:600px) { .bio-settings .bio-profile-main { padding-left:16px; padding-right:16px; }.bio-settings-topbar { padding-left:16px; padding-right:16px; }.bio-settings .bio-card { padding:20px; }.bio-settings .bio-profile-form { gap:18px; } }

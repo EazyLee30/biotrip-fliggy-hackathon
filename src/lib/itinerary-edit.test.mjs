@@ -1,10 +1,11 @@
+import * as protection from "./adjust/protection.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadModule, plain } from "./test-support/module-loader.mjs";
 
 const parser = loadModule("lib/planner-input.ts");
 const { applyItineraryOperations: apply, itineraryDates, syncItineraryReservations: sync, rebasePendingReservations: rebase } =
-  loadModule("lib/itinerary-edit.ts", { "./planner-input": parser });
+  loadModule("lib/itinerary-edit.ts", { "./adjust/protection": protection, "./planner-input": parser });
 const day = "2026-10-03", trip = { departureDate: day, returnDate: "2026-10-04" };
 const item = (time, name, fixed = false, date = day) => ({ date, time, name, detail: `详情：${name}`, fixed });
 const itinerary = [item("08:00", "早点"), item("10:00", "预约", true), item("12:00", "散步"), item("14:00", "茶馆"), item("09:00", "第二日", false, "2026-10-04")];

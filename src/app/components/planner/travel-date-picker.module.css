@@ -62,3 +62,5 @@
 .monthWeekdays { display: none; }
 @media (min-width: 700px) { .monthWeekdays { display: grid; } }
 @media (min-width: 700px) { .sheetTop { touch-action: auto; cursor: auto; } .grab { display: none; } }
+
+@media (max-width: 699px) { .titleRow > .iconButton { display: none; } }

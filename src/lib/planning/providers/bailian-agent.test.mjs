@@ -1,3 +1,4 @@
+import * as searchRouting from "../../travel-search-routing.ts";
 import * as mobilityModule from "../mobility.ts";
 import * as adjustPrompts from "../adjust-prompts.ts";
 import * as adjustHealth from "../adjust-health.ts";
@@ -16,7 +17,7 @@ const evidence = loadModule("lib/bailian-evidence.ts", {
 const output = loadModule("lib/bailian-output.ts", { "./bailian-evidence": evidence });
 const validation = loadModule("lib/planning/validation.ts", { "./contract": contract });
 const places = loadModule("lib/places.ts");
-const inventory = loadModule("lib/planning/inventory.ts", { "@/lib/places": places });
+const inventory = loadModule("lib/planning/inventory.ts", { "@/lib/places": places, "../travel-search-routing": searchRouting });
 const inventoryStream = loadModule("lib/planning/inventory-stream.ts", {
   "@/lib/bailian-evidence": evidence, "@/lib/bailian-output": output,
 });
@@ -28,7 +29,7 @@ const model = loadModule("lib/planning/providers/bailian-model.ts", {
   "../adjust-prompts": adjustPrompts, "../adjust-health": adjustHealth, "../prompts": prompts,
   "../schema": loadModule("lib/planning/schema.ts"),
   "../contract": contract,
-  "../validation": validation,
+  "../validation": validation, "../inventory": inventory,
 });
 
 const fixed = { date: "2026-10-10", time: "18:00", name: "返回酒店休息", detail: "用户固定安排", fixed: true };
@@ -89,6 +90,7 @@ function providerReturning(body, { inventoryEvents = [], agentEvents = null, fal
       async deleteBailianSession(_config, id) { deleted.push(id); return cleanupResult; },
     },
     "@/lib/flyai": { searchFlyai() { throw new Error("No live query in test"); } },
+    "@/lib/bailian-session-cleanup": { registerSessionCleanup: async () => {}, queueSessionCleanup: async id => { deleted.push(id); } },
     "@/lib/bailian-output": output,
     "@/lib/bailian-evidence": evidence,
     "../adjust-prompts": adjustPrompts, "../adjust-health": adjustHealth, "../prompts": prompts,
@@ -128,16 +130,16 @@ test("managed composition binds source_index places to the verified inventory", 
 });
 
 for (const [status, confirmed] of [[200, true], [404, true], [403, false], [null, false]]) {
-  test(`managed session logs confirmed cleanup accurately for ${status ?? "network failure"}`, async () => {
+  test(`managed session queues durable cleanup independently of upstream cleanup status ${status ?? "network failure"}`, async () => {
     const { provider, logs } = providerReturning(plan, {
       cleanupResult: { confirmed, status }, configPatch: { apiKey: "private-cleanup-key-canary" },
     });
     const result = await provider.composePlan(ctx, gathered);
     assert.equal(result.headline, plan.headline, "Cleanup failure must preserve the generated result");
-    const cleanup = logs.filter((entry) => ["cleanup_completed", "cleanup_failed"].includes(entry.state));
+    const cleanup = logs.filter((entry) => entry.state === "cleanup_queued");
     assert.equal(cleanup.length, 1);
-    assert.equal(cleanup[0].state, confirmed ? "cleanup_completed" : "cleanup_failed");
-    assert.equal(cleanup[0].status, status);
+    assert.equal(cleanup[0].state, "cleanup_queued");
+    assert.equal(cleanup[0].status, undefined, "Do not claim background deletion has already succeeded");
     assert.ok(!JSON.stringify(cleanup).includes("private-cleanup-key-canary"));
     assert.ok(!JSON.stringify(cleanup).includes(plan.summary));
   });
@@ -219,7 +221,9 @@ test("Skill inventory reads real tool names and links then composition uses all 
   const { provider, requests } = providerReturning(plan, { inventoryEvents: [call(command), result] });
   const actualInventory = await provider.flyaiInventory(ctx);
   assert.equal(actualInventory.executor, "agent_skill");
-  assert.deepEqual(plain(actualInventory.sources), [{ name: "工具真实商品名称", url: "https://example.com/actual-tool", category: "景点与体验", price: "80" }]);
+  assert.deepEqual(plain(actualInventory.sources.map(({ name, url, category, price }) => ({ name, url, category, price }))), [{ name: "工具真实商品名称", url: "https://example.com/actual-tool", category: "景点与体验", price: "¥80" }]);
+  assert.equal(actualInventory.sources[0].tool, "search_poi");
+  assert.equal(actualInventory.receipts[0].state, "completed");
   const fullCtx = { ...ctx, input: { ...ctx.input, preferences: {
     intention: "安静体验", ambientPreferences: ["自然"], colorTone: "绿色", savedMemory: "喜欢坐着看风景", planningStyle: "flexible",
   }, selfReport: { fatigue: 4, subjectiveStress: 3 } } };
@@ -336,6 +340,68 @@ test("mixed inventory retains good sources and marks only the empty category unv
   assert.equal(actualInventory.searches, 2);
   assert.deepEqual(plain(actualInventory.failedCategories), ["住宿"]);
   assert.equal(actualInventory.sources[0].category, "景点与体验");
+});
+
+test("a later Skill failure searches only unfinished queries and keeps successful/empty receipts", async () => {
+  const multiCtx = { ...ctx, searchIntents: [{ kind: "hotel", city: "杭州" }, { kind: "poi", city: "杭州" }, { kind: "keyword", query: "杭州 茶馆" }] };
+  const commands = inventory.skillInventoryQueries(multiCtx).commands;
+  let retried = [];
+  const failed = { ...outputFor("tea"), content: [{ type: "data", data: { call_id: "tea", output: JSON.stringify({ exit_code: 1, stdout: "", stderr: "timeout", interrupted: false }) } }] };
+  const qa = providerReturning(plan, { inventoryEvents: [
+    callFor("hotel", commands[0].command), outputFor("hotel", [{ name: "真实酒店", detailUrl: "https://example.com/hotel" }]),
+    callFor("poi", commands[1].command), outputFor("poi"), callFor("tea", commands[2].command), failed,
+  ], fallback: async (_signal, _trip, _date, _preview, selection) => {
+    retried = selection.queries.map(query => query.queryKey);
+    return { sources: [{ name: "真实茶馆", url: "https://example.com/tea", category: "旅行商品", price: null }], searches: 1, failedSearches: 0, failedCategories: [], receipts: [] };
+  } });
+  const value = await qa.provider.flyaiInventory(multiCtx);
+  assert.deepEqual(retried, [commands[2].queryKey]);
+  assert.deepEqual(plain(value.sources.map(source => source.name)), ["真实酒店", "真实茶馆"]);
+  assert.equal(value.searches, 3);
+  assert.ok(value.receipts.some(receipt => receipt.state === "empty" && receipt.queryKey === commands[1].queryKey));
+});
+
+test("same-category queries each need their own completion receipt", async () => {
+  const scoped = { ...ctx, searchIntents: [{ kind: "keyword", query: "杭州 茶馆" }, { kind: "keyword", query: "杭州 接送" }] };
+  const commands = inventory.skillInventoryQueries(scoped).commands;
+  const value = await inventoryStream.consumeInventoryStream(frames([
+    callFor("tea", commands[0].command), outputFor("tea"),
+    callFor("ride", commands[1].command), outputFor("ride", [{ title: "真实接送", jumpUrl: "https://example.com/ride" }]),
+  ]), new AbortController(), commands, () => {});
+  assert.equal(value.queryReceipts.length, 2);
+  assert.equal(value.flyaiSources[0].name, "真实接送");
+});
+
+test("unknown Skill calls are retained without automatic retry while unstarted queries can finish", async () => {
+  const scoped = { ...ctx, searchIntents: [{ kind: "hotel", city: "杭州" }, { kind: "poi", city: "杭州" }, { kind: "keyword", query: "杭州 茶馆" }] };
+  const commands = inventory.skillInventoryQueries(scoped).commands;
+  let retried = [];
+  const qa = providerReturning(plan, { inventoryEvents: [
+    callFor("hotel", commands[0].command), outputFor("hotel", [{ name: "真实酒店", detailUrl: "https://example.com/hotel" }]),
+    callFor("poi", commands[1].command),
+  ], fallback: async (_signal, _trip, _date, _preview, selection) => {
+    retried = selection.queries.map(query => query.queryKey);
+    return { sources: [], searches: 1, failedSearches: 0, failedCategories: selection.unsearchedCategories, receipts: [] };
+  } });
+  const result = await qa.provider.flyaiInventory(scoped);
+  assert.deepEqual(retried, [commands[2].queryKey]);
+  assert.ok(result.receipts.some(receipt => receipt.queryKey === commands[1].queryKey && receipt.state === "unknown"));
+  assert.ok(result.failedCategories.includes(commands[1].category));
+  assert.equal(result.sources[0].name, "真实酒店");
+});
+
+test("four observed Skill calls exhaust the fallback attempt budget", async () => {
+  const scoped = { ...ctx, searchIntents: ["杭州 茶馆", "杭州 接送", "杭州 温泉", "杭州 SIM卡"].map(query => ({ kind: "keyword", query })) };
+  const commands = inventory.skillInventoryQueries(scoped).commands;
+  let calls = 0;
+  const failed = { ...outputFor("query-0"), content: [{ type: "data", data: { call_id: "query-0", output: JSON.stringify({ exit_code: 1, stdout: "", stderr: "timeout", interrupted: false }) } }] };
+  const qa = providerReturning(plan, { inventoryEvents: [...commands.map((command, i) => callFor(`query-${i}`, command.command)), failed],
+    fallback: async () => { calls++; return gathered.inventory; } });
+  const result = await qa.provider.flyaiInventory(scoped);
+  assert.equal(calls, 0);
+  assert.equal(result.receipts.length, 4);
+  assert.ok(result.receipts.some(receipt => receipt.state === "failed"));
+  assert.ok(result.failedCategories.length > 0);
 });
 
 test("inventory preserves requires_action and retries_exhausted stop reasons", async () => {

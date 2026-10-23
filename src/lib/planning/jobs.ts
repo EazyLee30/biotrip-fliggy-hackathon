@@ -1,12 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { getDatabase } from "@/lib/database";
-import { withActivityIds, identifyGeneratedActivities, getJourney, checkJourneyForGeneration, JourneyError, requireJourneyId, requireVersion } from "@/lib/journeys";
+import { withActivityIds, identifyGeneratedActivities, getJourney, checkJourneyForGeneration, protectJourneyActivities, JourneyError, requireJourneyId, requireVersion } from "@/lib/journeys";
+import { backlogInsertStatements } from "@/lib/journey-collections";
 import { getBailianConfig, deleteBailianSession } from "@/lib/bailian";
 import { applyAdjustments } from "../adjust/apply";
-import { adjustmentScope } from "../adjust/request";
+import { adjustmentScope, destinationClock } from "../adjust/request";
 import type { AdjustmentCandidate } from "./adjust-pipeline";
 import { reservePlanning } from "./rate-limit";
-import type { JourneyGeneratedPlan } from "@/lib/journey-types";
+import type { AdjustmentRecord, JourneyGeneratedPlan } from "@/lib/journey-types";
+import { reservationBaseline, identifyReservationCandidate, protectReservationCandidate } from "./reservations";
 
 export type JobState = "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "indeterminate" | "cancel_requested" | "cancelled";
 export type PlanningTiming = { submittedAt: string; firstRecommendationsMs?: number; composedMs?: number; resultReadyMs?: number; precision: "second" };
@@ -75,12 +77,17 @@ export async function failJob(row:JobRow,code:string,message:string,state:JobSta
 export async function finishJob(row:JobRow,generated:JourneyGeneratedPlan,draft:unknown) {
  if(generated.source!=="live" || !generated.plan.itinerary.length || JSON.stringify(generated).length>64000) throw new JourneyError(502,"INVALID_GENERATED_PLAN","生成的行程不完整。");
  const current=await getJourney(row.account_id,row.journey_id);
- const plan=JSON.stringify(identifyGeneratedActivities(generated,row.journey_id,current.plan)),encoded=JSON.stringify(draft);
+ const request=JSON.parse(row.request_json) as {reservationEdits?:unknown};
+ const shadow=reservationBaseline(current,request.reservationEdits).shadow;
+ const candidate=current.plan ? identifyReservationCandidate(current,shadow,generated) : identifyGeneratedActivities(generated,row.journey_id,current.plan);
+ if(current.version===row.base_version) protectReservationCandidate(current,shadow,candidate);
+ const plan=JSON.stringify(candidate),encoded=JSON.stringify(draft);
+ const pending=JSON.stringify({draft,...(request.reservationEdits !== undefined ? {reservationEdits:request.reservationEdits} : {})});
  if(plan.length>64000) throw new JourneyError(502,"INVALID_GENERATED_PLAN","行程内容过长，无法完整保存。");
  // Keep a candidate even when a concurrent edit makes automatic application unsafe.
  if(current.plan || current.version!==row.base_version || current.status==='completed') {
   await getDatabase().prepare("UPDATE planning_jobs SET state='awaiting_approval',candidate_json=?,request_json=?,updated_at=unixepoch() WHERE id=? AND state='running'")
-    .bind(plan,JSON.stringify({draft}),row.id).run();
+    .bind(plan,pending,row.id).run();
  } else {
   const db=getDatabase();
   const result=await db.batch([
@@ -88,7 +95,7 @@ export async function finishJob(row:JobRow,generated:JourneyGeneratedPlan,draft:
    db.prepare("UPDATE planning_jobs SET state='completed',candidate_json=NULL,request_json='{}',updated_at=unixepoch() WHERE id=? AND state='running' AND changes()=1").bind(row.id),
   ]);
   if(result[0].results.length!==1) {
-   await db.prepare("UPDATE planning_jobs SET state='awaiting_approval',candidate_json=?,request_json=?,updated_at=unixepoch() WHERE id=? AND state='running'").bind(plan,JSON.stringify({draft}),row.id).run();
+   await db.prepare("UPDATE planning_jobs SET state='awaiting_approval',candidate_json=?,request_json=?,updated_at=unixepoch() WHERE id=? AND state='running'").bind(plan,pending,row.id).run();
   }
  }
  await getDatabase().prepare(`INSERT INTO planning_job_events(job_id,kind,payload_json)
@@ -97,7 +104,7 @@ export async function finishJob(row:JobRow,generated:JourneyGeneratedPlan,draft:
    .bind(row.id,JSON.stringify({stage:"complete",status:"ok",message:"结果已保存，或已准备好等待确认。"}),row.id,row.id).run();
  await releaseJob(row);
 }
-export async function decidePlanningJob(accountId:string,id:string,action:unknown,version:unknown,accept?:unknown) {
+export async function decidePlanningJob(accountId:string,id:string,action:unknown,version:unknown,accept?:unknown,now=new Date()) {
  const row=await jobRow(accountId,id);
  if(action==='discard') {
   if(row.state!=='awaiting_approval') throw new JourneyError(409,"JOB_NOT_CANDIDATE","当前没有待确认的方案。");
@@ -112,19 +119,42 @@ export async function decidePlanningJob(accountId:string,id:string,action:unknow
  // Reject a changed baseline rather than overwrite edits or reservations the candidate never saw.
  if(current.version!==version || version!==row.base_version || current.status==='completed') throw new JourneyError(409,"JOURNEY_CHANGED","当前行程已变化，这份候选方案无法直接覆盖；请保留原方案并重新调整。");
  let generated = row.candidate_json;
+ let adjustmentRecord:AdjustmentRecord|null=null;
  if(row.mode === 'adjust') {
   const candidate = JSON.parse(row.candidate_json) as AdjustmentCandidate;
-  const scope = adjustmentScope(current);
+  const scope = adjustmentScope(current,now);
+  // A pre-trip scope is clamped to the future arrival day, so scope equality
+  // alone cannot expire yesterday's self-report across local midnight.
+  const timezone=current.draft.trip?.destinationTimezone || "Asia/Shanghai";
+  const submittedDay=destinationClock(timezone,new Date(row.created_at*1000)).date;
+  if(submittedDay!==destinationClock(timezone,now).date) throw new JourneyError(409,"ADJUSTMENT_EXPIRED","这份建议使用了之前一天的感受，请按今天的状态重新获取。");
   if(scope.date !== candidate.scope.date || scope.date > candidate.scope.throughDate) throw new JourneyError(409,"ADJUSTMENT_EXPIRED","这份建议的日期已过去，请重新获取。");
-  try { generated = JSON.stringify(applyAdjustments(current.plan!, candidate, accept, current.draft.trip!, scope.fromTime)); }
+  try {
+   const next=applyAdjustments(current.plan!, candidate, accept, current.draft.trip!, scope.fromTime);
+   const accepted=candidate.proposals.filter(proposal=>(accept as string[]).includes(proposal.id));
+   adjustmentRecord={id:row.id,jobId:row.id,journeyId:current.id,appliedAt:next.bodyAdjustment!.updatedAt,localDate:candidate.scope.date,beforeVersion:version,afterVersion:version+1,fatigueBefore:candidate.fatigueBefore ?? null,changes:accepted.map(({id,title,angle,templates})=>({id,title,angle,templates})),outcome:null};
+   next.bodyAdjustment={...next.bodyAdjustment!,id:row.id};
+   next.manualAdjustment={...next.manualAdjustment!,id:randomUUID()};
+   generated=JSON.stringify(next);
+  }
   catch(error) { throw new JourneyError(409,"ADJUSTMENT_INFEASIBLE",error instanceof Error ? error.message : "所选建议无法同时应用。"); }
   if(generated.length > 64000) throw new JourneyError(400,"PLAN_TOO_LARGE","调整后的内容太多，请减少所选建议。");
  }
- const draft=JSON.stringify(JSON.parse(row.request_json).draft);
- const db=getDatabase();const result=await db.batch([
+ const generatedPlan=JSON.parse(generated) as JourneyGeneratedPlan;
+ const pending=JSON.parse(row.request_json);
+ if(row.mode === 'adjust') protectJourneyActivities(current,generatedPlan);
+ else protectReservationCandidate(current,reservationBaseline(current,pending.reservationEdits,undefined,now).shadow,generatedPlan,now);
+ const draft=JSON.stringify(pending.draft);
+ const db=getDatabase();const statements=[
   db.prepare("UPDATE journeys SET draft_json=?,plan_draft_json=?,plan_json=?,status=CASE WHEN status='active' THEN 'active' ELSE 'planned' END,version=version+1,updated_at=unixepoch() WHERE id=? AND account_id=? AND version=? AND status<>'completed' AND EXISTS(SELECT 1 FROM planning_jobs WHERE id=? AND state='awaiting_approval') RETURNING version").bind(draft,draft,generated,row.journey_id,accountId,version,id),
   db.prepare("UPDATE planning_jobs SET state='completed',candidate_json=NULL,request_json='{}',updated_at=unixepoch() WHERE id=? AND state='awaiting_approval' AND changes()=1").bind(id),
- ]);
+ ];
+ if(adjustmentRecord) {
+  statements.push(db.prepare("INSERT INTO journey_adjustments(id,account_id,journey_id,job_id,payload_json) SELECT ?,?,?,?,? WHERE changes()=1").bind(adjustmentRecord.id,accountId,current.id,row.id,JSON.stringify(adjustmentRecord)));
+ }
+ const removed=current.plan!.plan.itinerary.filter(item=>!generatedPlan.plan.itinerary.some(next=>next.id===item.id));
+ statements.push(...backlogInsertStatements(accountId,current.id,removed,row.id,version+1,adjustmentRecord?row.id:undefined,adjustmentRecord?generatedPlan.manualAdjustment?.id:undefined,row.id));
+ const result=await db.batch(statements);
  if(result[0].results.length!==1) throw new JourneyError(409,"JOURNEY_CHANGED","行程已变化，请刷新后再操作。");
  return {job:publicJob(await jobRow(accountId,id)),journey:await getJourney(accountId,row.journey_id)};
 }

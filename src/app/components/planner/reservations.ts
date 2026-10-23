@@ -72,6 +72,21 @@ export function reservationTextError(text: string, start: string, end: string): 
   return null;
 }
 
+/** Prepare a separate review draft. Callers keep the original untouched until explicit confirmation. */
+export function recoverReservationCards(text: string, start: string, end: string) {
+  const rows = text.split(/\r\n|\n|\r/).map(row => row.trim()).filter(Boolean);
+  const items: ScheduleItem[] = [];
+  const dates = reservationDates(start, end);
+  for (const row of rows) {
+    const item = parseSchedule(row)?.[0];
+    if (!item || items.length >= 30 || !dates.includes(item.date ?? start)) continue;
+    items.push({ ...item, date: item.date ?? start });
+  }
+  const result = serializeReservations(items);
+  const recoveredCount = result.value === null ? 0 : items.length;
+  return { value: result.value ?? "", totalCount: rows.length, recoveredCount, pendingCount: rows.length - recoveredCount };
+}
+
 export function replaceReservation(text: string, index: number | null, draft: ReservationDraft, start: string, end: string): ReservationChange {
   // A malformed legacy value must be repaired explicitly, never parsed as an empty list.
   const existingError = text.length > 6000 ? "原预约内容超过 6000 个字符，请先在批量编辑中修复。" : scheduleError(text);

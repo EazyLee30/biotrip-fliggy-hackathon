@@ -1,5 +1,7 @@
 import { isCalendarDate, MAX_TRIP_DAYS, parseSchedule, type ScheduleItem } from "./planner-input";
 import type { ActivityEffort, ActivityKind, ActivityMove, JourneyGeneratedPlan, JourneyTripDraft } from "./journey-types";
+import { assertNoNewOverlaps } from "./adjust/protection";
+export { assertProtectedActivities, activityIsProtected, ActivityProtectionError } from "./adjust/protection";
 
 export type ItineraryItem = JourneyGeneratedPlan["plan"]["itinerary"][number];
 /** Structured facts about an activity; a closed vocabulary rather than free text. */
@@ -44,7 +46,7 @@ export function identifyGeneratedActivities(generated: JourneyGeneratedPlan, nam
     }
     const id = match?.id ?? crypto.randomUUID();
     used.add(id);
-    return { ...item, id };
+    return { ...item, id, progress: match?.progress };
   });
   return { ...generated, plan: { ...generated.plan, itinerary } };
 }
@@ -232,7 +234,10 @@ export function applyItineraryOperations(
     return (before.date ?? dates[0]) !== item.date || ["time", "name", "fixed"].some((key) => before[key as keyof ItineraryItem] !== item[key as keyof ItineraryItem]) || (item.fixed && explicitlyEdited.has(sourceIndex))
       ? [{ beforeIndex: sourceIndex, before: { ...before }, after: { ...item } }] : [];
   })];
-  return { itinerary: rows.map(({ item }) => item), reservationChanges };
+  const itineraryResult = rows.map(({ item }) => item);
+  try { assertNoNewOverlaps(itinerary, itineraryResult); }
+  catch (error) { fail(error instanceof Error ? error.message : "活动时间重叠，请调整时间。"); }
+  return { itinerary: itineraryResult, reservationChanges };
 }
 
 /** Update matched original reservations, including those explicitly marked flexible. */

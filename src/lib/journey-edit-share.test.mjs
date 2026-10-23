@@ -1,3 +1,4 @@
+import * as protection from "./adjust/protection.ts";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
@@ -5,7 +6,7 @@ import { test } from "node:test";
 import { loadModule, plain, readProjectFile } from "./test-support/module-loader.mjs";
 
 const ACCOUNT = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
-const edit = loadModule("lib/itinerary-edit.ts", { "./planner-input": loadModule("lib/planner-input.ts") });
+const edit = loadModule("lib/itinerary-edit.ts", { "./adjust/protection": protection, "./planner-input": loadModule("lib/planner-input.ts") });
 const shares = loadModule("lib/journey-share.ts", { "./product-image": loadModule("lib/product-image.ts"), "./planning-recommendations": loadModule("lib/planning-recommendations.ts", { "./product-image": loadModule("lib/product-image.ts") }, { URLSearchParams }) });
 const DRAFT = { intention: "安静恢复", fatigue: 3, profileMemoryNotes: "私人身体记录", consent: true, trip: {
   originCity: "上海", destinationCity: "杭州", departureDate: "2026-10-03", returnDate: "2026-10-04",
@@ -39,7 +40,7 @@ function fixture() {
   } };
   const auth = { getDatabase: () => database, getCurrentAccount: async () => state.account ? { id: state.account } : null,
     isSameOrigin: (request) => request.headers.get("origin") === new URL(request.url).origin };
-  const journeys = loadModule("lib/journeys.ts", { "@/lib/database": auth, "@/lib/preferences": { learnFromDraft: async () => {}, learnFromFeedback: async () => {} }, "@/lib/itinerary-edit": edit });
+  const journeys = loadModule("lib/journeys.ts", { "@/lib/database": auth, "@/lib/preferences": { learnFromDraft: async () => {}, learnFromFeedback: async () => {} }, "@/lib/itinerary-edit": edit }, {Date:class extends Date{constructor(...args){super(...(args.length?args:["2026-10-03T01:00:00Z"]));}}});
   const http = loadModule("lib/journey-http.ts", { "next/server": { NextResponse: Response }, "@/lib/auth": auth, "@/lib/journeys": journeys });
   const deps = { "next/server": { NextResponse: Response }, "@/lib/auth": auth, "@/lib/journeys": journeys, "@/lib/journey-http": http, "@/lib/journey-share": shares };
   return { sqlite, state, journeys, api: loadModule("app/api/journeys/[id]/itinerary/route.ts", deps),

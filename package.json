@@ -14,12 +14,18 @@
     "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "@vinext/cloudflare": "1.0.0-beta.10",
+    "lucide-react": "^1.59.0",
+    "motion": "^14.3.0",
     "next": "16.3.6",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
     "react-server-dom-webpack": "^19.2.8",
+    "recharts": "^3.10.1",
+    "remark-gfm": "^4.0.1",
     "vinext": "1.0.0-beta.12"
   },
   "devDependencies": {

@@ -1,0 +1,64 @@
+.switch.switch {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  min-width: 48px;
+  height: 44px;
+  min-height: 44px;
+  flex: 0 0 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  vertical-align: middle;
+  cursor: pointer;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.track {
+  display: block;
+  width: 44px;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 2px;
+  border: 1px solid #c8d4ca;
+  border-radius: 999px;
+  background: #fff;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+.thumb {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #c0ccc4;
+  box-shadow: 0 1px 3px #193a3526;
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease;
+}
+.switch[aria-checked="true"] .track {
+  background: #2f6654;
+  border-color: #2f6654;
+}
+.switch[aria-checked="true"] .thumb {
+  transform: translateX(18px);
+  background: #fff;
+}
+.switch:focus-visible {
+  outline: 2px solid #2f6654;
+  outline-offset: 2px;
+}
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .thumb {
+    transition: none;
+  }
+}

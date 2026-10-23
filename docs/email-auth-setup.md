@@ -4,7 +4,7 @@ BioTrip 的验证码邮件从 Cloudflare Worker 通过 Resend HTTPS API 发送�
 
 ## 首次配置
 
-1. 在 Resend 添加并验证发信子域 `notify.biotrip.ccwu.cc`。Resend 推荐使用子域区分事务邮件并隔离发件声誉。
+1. 在 Resend 添加并验证发信子域 `notify.biotrip.eazylee.si`。Resend 推荐使用子域区分事务邮件并隔离发件声誉。
 2. 在 Cloudflare DNS 中按 Resend 控制台逐条添加其为该子域给出的验证记录。不要删改其他现有 DNS 记录；DNS 名称、内容和代理状态以 Resend 当前页面说明为准。
 3. 在 Resend 创建仅用于邮件发送的 API Key。
 4. 将 API Key 作为 Cloudflare Worker Secret 写入，不要写进源码、`wrangler.jsonc` 或聊天：
@@ -13,18 +13,18 @@ BioTrip 的验证码邮件从 Cloudflare Worker 通过 Resend HTTPS API 发送�
    pnpm exec wrangler secret put RESEND_API_KEY
    ```
 
-5. 确认 Worker 的 `RESEND_FROM_EMAIL` 为 `BioTrip <login@notify.biotrip.ccwu.cc>`，部署后发送一次登录验证码并检查收件箱及 Resend 投递日志。
+5. 确认 Worker 的 `RESEND_FROM_EMAIL` 为 `BioTrip <login@notify.biotrip.eazylee.si>`，部署后发送一次登录验证码并检查收件箱及 Resend 投递日志。
 
 在域名验证完成且 `RESEND_API_KEY` 已配置前，登录邮件发送会失败；应用不会显示假验证码，也不会退回模拟登录。
 
 ## 可选：Cloudflare Email Routing 收件
 
-如果需要 `support@biotrip.ccwu.cc` 等收件地址，在 Cloudflare Email Routing 启用域名、添加并验证实际收件邮箱，再创建自定义地址到该邮箱的转发规则。Cloudflare 会配置收件所需的 DNS 记录。目标收件地址由账户持有人选择；BioTrip 的验证码登录无需设置或读取这个地址。
+如果需要 `support@biotrip.eazylee.si` 等收件地址，在 Cloudflare Email Routing 启用域名、添加并验证实际收件邮箱，再创建自定义地址到该邮箱的转发规则。Cloudflare 会配置收件所需的 DNS 记录。目标收件地址由账户持有人选择；BioTrip 的验证码登录无需设置或读取这个地址。
 
 ## 运行时配置
 
 - `RESEND_API_KEY`：Cloudflare Worker Secret。
-- `RESEND_FROM_EMAIL`：普通 Worker 变量；默认值为 `BioTrip <login@notify.biotrip.ccwu.cc>`。
+- `RESEND_FROM_EMAIL`：普通 Worker 变量；默认值为 `BioTrip <login@notify.biotrip.eazylee.si>`。
 
 Resend API 调用只发送邮箱地址和一次性验证码，不把 WHOOP 或旅行数据放进邮件。供应商会按其服务条款处理投递数据。
 

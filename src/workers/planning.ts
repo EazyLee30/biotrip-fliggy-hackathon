@@ -57,7 +57,7 @@ export class PlanningWorkflow extends WorkflowEntrypoint<Cloudflare.Env,Params> 
      return saved.value as T;
     }
    };
-   if(row.mode === 'adjust' && 'adjustment' in prepared) {
+   if(prepared.mode === 'adjust') {
     const candidate=await runAdjustments({...request,journey:prepared.journey,adjustment:prepared.adjustment});
     await pending;
     await step.do('save-result',async()=>{await finishAdjustmentJob(row,candidate,prepared.draft);return {saved:true};});

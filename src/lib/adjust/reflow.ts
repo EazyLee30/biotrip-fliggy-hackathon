@@ -1,6 +1,7 @@
 import { applyItineraryOperations, ItineraryEditError, type ItineraryItem, type ItineraryOperation } from "../itinerary-edit";
 import type { JourneyTripDraft } from "../journey-types";
 import { activityTags, clockOf, minutesOf } from "./tags";
+import { activityIsProtected, assertProtectedActivities } from "./protection";
 import type { AdjustScope, AdjustTemplate } from "./types";
 
 /**
@@ -46,12 +47,12 @@ function sameDay(state: Working, date: string) {
 }
 function occupied(item: ItineraryItem, next?: ItineraryItem): number {
   const length = activityTags(item).durationMin;
-  return next ? Math.min(length, Math.max(5, minutesOf(next.time) - minutesOf(item.time))) : length;
+  return item.durationMin !== undefined ? length : next ? Math.min(length, Math.max(5, minutesOf(next.time) - minutesOf(item.time))) : length;
 }
 function roundUp(minutes: number) { return Math.ceil(minutes / 5) * 5; }
 function assertInScope(item: ItineraryItem, scope: AdjustScope) {
   const date = item.date ?? "";
-  if (date < scope.date || date > scope.throughDate || (date === scope.date && item.time < scope.fromTime)) {
+  if (date < scope.date || date > scope.throughDate || activityIsProtected(item, {date:scope.date,time:scope.fromTime})) {
     infeasible("已经过去或不在本次调整范围内的安排不会被改动。");
   }
 }
@@ -62,6 +63,8 @@ function assertInScope(item: ItineraryItem, scope: AdjustScope) {
  * Returns the length that actually fits before the next fixed reservation.
  */
 function makeRoom(state: Working, date: string, start: number, length: number, trip: JourneyTripDraft, skipId?: string): number {
+  const prior = sameDay(state, date).find(item => item.id !== skipId && item.progress?.state !== "skipped" && minutesOf(item.time) < start && minutesOf(item.time) + activityTags(item).durationMin > start);
+  if (prior) infeasible(`「${prior.name}」仍占用这段时间，请等这项安排结束后再插入。`);
   const later = sameDay(state, date).filter((item) => item.id !== skipId && minutesOf(item.time) >= start);
   const barrier = later.find((item) => item.fixed);
   let fits = length;
@@ -117,6 +120,13 @@ function applyTemplate(state: Working, template: AdjustTemplate, trip: JourneyTr
     else infeasible("新增的停留缺少时间。");
     if (template.date < scope.date || template.date > scope.throughDate) infeasible("新增的停留不在本次调整范围内。");
     if (template.date === scope.date) start = Math.max(start, roundUp(minutesOf(scope.fromTime)));
+    // A past start is not a finished appointment: the entire occupied interval
+    // remains protected. Offer the pause after it instead of inside it.
+    for (const item of sameDay(state,template.date)) {
+      if(item.progress?.state === "skipped")continue;
+      const begins=minutesOf(item.time),ends=begins+activityTags(item).durationMin;
+      if(begins<start && ends>start)start=roundUp(ends);
+    }
     if (start > LAST_START) infeasible("当天已经没有合适的时间。");
     const length = makeRoom(state, template.date, start, template.durationMin, trip);
     const id = crypto.randomUUID();
@@ -182,6 +192,8 @@ export function reflow(itinerary: readonly ItineraryItem[], templates: readonly 
     const day = sameDay(state, item.date ?? ""), previous = day[day.findIndex(row => row.id === item.id) - 1];
     if (!previous || previous.id !== template.fromActivityId || (template.fromActivityName && previous.name !== template.fromActivityName)) infeasible("路线起点已变化，请重新获取出行建议。");
   }
+  try { assertProtectedActivities(itinerary, state.items, {clock:{date:scope.date,time:scope.fromTime},fixed:true}); }
+  catch (error) { infeasible(error instanceof Error ? error.message : "本次调整涉及受保护的活动。"); }
   return { operations: state.operations, itinerary: state.items, changedIds: [...state.changed] };
 }
 

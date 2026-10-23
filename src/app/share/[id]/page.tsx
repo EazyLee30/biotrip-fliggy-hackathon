@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = share ? `${share.headline} · BioTrip` : "分享暂不可用 · BioTrip";
   const cover = shareCoverAsset(share?.coverAssetId);
   return { title, description: "一段从容的旅行手记。", robots: { index: false, follow: false },
-    openGraph: { title, description: "一段从容的旅行手记。", images: [{ url: `https://biotrip.ccwu.cc${cover.src}`, width: 1280, height: 720 }] } };
+    openGraph: { title, description: "一段从容的旅行手记。", images: [{ url: `https://biotrip.eazylee.si${cover.src}`, width: 1280, height: 720 }] } };
 }
 export default async function SharedTripPage({ params }: Props) {
   const { id } = await params;

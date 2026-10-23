@@ -13,6 +13,6 @@ export function JourneyCover({ images, fallback, alt, compact = false }: { image
   return <div className={`${css.cover} ${compact ? css.grid : ""}`} aria-label={alt}>
     {shown.length ? shown.map(image => <Image key={image.imageUrl} src={fliggyImage(image.imageUrl, compact ? 200 : 1000, compact ? 200 : 650) ?? image.imageUrl} alt={image.name} width={compact ? 200 : 1000} height={compact ? 200 : 650} unoptimized loading={compact ? "lazy" : "eager"} referrerPolicy="no-referrer" onError={() => setFailed(current => [...current, image.imageUrl])} />)
       : <Image src={fallback} alt={alt} width={1000} height={650} unoptimized loading={compact ? "lazy" : "eager"} />}
-    {!compact && shown.length > 0 && <span className={css.credit}>{shown.length ? `${shown[0].kind === "poi" ? "飞猪实景" : "飞猪商品图片"} · 以页面为准` : "授权实景 / 氛围图 · 来源见图片说明"}</span>}
+    {!compact && <span className={css.credit}>{shown.length ? `${shown[0].kind === "poi" ? "飞猪实景" : "飞猪商品图片"} · 以页面为准` : "旅行氛围图"}</span>}
   </div>;
 }

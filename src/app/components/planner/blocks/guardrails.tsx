@@ -1,3 +1,4 @@
+import { ToggleSwitch } from "../../toggle-switch";
 import { Icon } from "../../zen-ui";
 import styles from "../../zen-dashboard.module.css";
 import type { Guardrails } from "@/lib/journey-types";
@@ -61,13 +62,11 @@ export function GuardrailToggles({
                 <strong>{item.name}</strong>
                 <small>{item.effect}</small>
               </span>
-              <input
-                type="checkbox"
-                role="switch"
+              <ToggleSwitch
                 checked={on}
                 disabled={disabled}
-                aria-label={item.name}
-                onChange={(event) => onChange({ ...value, [item.key]: event.target.checked })}
+                label={item.name}
+                onChange={(enabled) => onChange({ ...value, [item.key]: enabled })}
               />
             </label>
           );

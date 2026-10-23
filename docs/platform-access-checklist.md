@@ -18,8 +18,8 @@
 | 应用状态 | ✅ | Sandbox，0 / 10 members；最多 10 个连接成员，扩容需 WHOOP 审批升级 Build |
 | 授权 scopes | ✅ | `read:recovery`、`read:cycles`、`read:sleep`、`read:workout`、`read:profile`、`read:body_measurement`、`offline` |
 | `read:profile` 的用途 | ✅ | 仅用于在账户页显示连接的是哪个 WHOOP 账号；姓名与邮箱不发送给任何智能体。与 `src/lib/whoop.ts` 的 `WHOOP_SCOPES` 一致 |
-| 回调地址 | ✅ | `https://biotrip.ccwu.cc/api/whoop/callback` |
-| 隐私政策 URL | ✅ | `https://biotrip.ccwu.cc/privacy`（2026-10-01 已重写，如实描述三 Agent 数据分流与 D1 加密存储） |
+| 回调地址 | ✅ | `https://biotrip.eazylee.si/api/whoop/callback` |
+| 隐私政策 URL | ✅ | `https://biotrip.eazylee.si/privacy`（2026-10-01 已重写，如实描述三 Agent 数据分流与 D1 加密存储） |
 | Worker 侧凭据 | ✅ | Client ID（vars）、Client Secret、OAuth 加密密钥（secrets） |
 | Token 存储 | ✅ | AES-256-GCM 加密后存 D1 `whoop_connections`，按账户隔离；Cookie 仅作短路缓存。**注意 `0004` 迁移应用状态为 ❓** |
 | **用户真实 OAuth 授权** | ❌ | **从未完成过一次。** 授权前应用拿不到任何会员数据 |
@@ -82,11 +82,11 @@
 
 | 检查项 | 状态 | 记录 |
 | --- | --- | --- |
-| 生产域名 | ✅ | `https://biotrip.ccwu.cc`，Custom Domain，HTTPS 正常解析 |
+| 生产域名 | ✅ | `https://biotrip.eazylee.si`，Custom Domain，HTTPS 正常解析 |
 | 架构 | ✅ | Workers + vinext，D1 数据库 `biotrip-users`（`4010c5a8-aba4-4323-83e5-bc3bd76b00f9`）。不是静态 Pages 导出 |
 | Worker Secrets | ✅ | `AUTH_SECRET`、`WHOOP_CLIENT_SECRET`、`WHOOP_COOKIE_SECRET`、`BAILIAN_API_KEY` |
 | `RESEND_API_KEY` | ❓ | **记录矛盾**：本文与 `cloudflare-deployment.md` 曾记录为已配置，README 曾记录为待配置。以 `pnpm exec wrangler secret list` 为准 |
-| 发信域 `notify.biotrip.ccwu.cc` | ❓ | Resend 域名 DNS 验证状态**未核实**。未通过则验证码邮件不可用、线上无法注册 |
+| 发信域 `notify.biotrip.eazylee.si` | ❓ | Resend 域名 DNS 验证状态**未核实**。未通过则验证码邮件不可用、线上无法注册 |
 | 线上页面可打开 | ✅ | 首页、邮箱登录页、隐私页均可打开；未登录访问规划状态接口返回"请先登录" |
 | D1 迁移 | ❓ | 只有 `0002_password_auth.sql` 有应用记录。**`0003`/`0004`/`0005` 状态未知，其中 `0003_journeys.sql` 缺失会让所有旅程接口 503** |
 | **线上代码版本** | ❌ | Version `a798497d-5874-413c-a3d7-da550a21401a`，**早于 `7e16b18` 和 `263d726` 两次提交**，线上运行的不是当前仓库代码 |
@@ -100,8 +100,8 @@
 | 检查项 | 状态 | 记录 |
 | --- | --- | --- |
 | 发信通道 | ✅ 代码完成 | Resend REST API（`https://api.resend.com/emails`），从 Worker 直接调用；不使用 Cloudflare Workers Email Sending 绑定，无需 Workers Paid |
-| 发件人 | ✅ | `BioTrip <login@notify.biotrip.ccwu.cc>`，由非敏感变量 `RESEND_FROM_EMAIL` 设置 |
-| Cloudflare Email Routing | ✅ 可用 | 仅用于根域收信转发（如 `support@biotrip.ccwu.cc`），**不是验证码发信通道**，可选 |
+| 发件人 | ✅ | `BioTrip <login@notify.biotrip.eazylee.si>`，由非敏感变量 `RESEND_FROM_EMAIL` 设置 |
+| Cloudflare Email Routing | ✅ 可用 | 仅用于根域收信转发（如 `support@biotrip.eazylee.si`），**不是验证码发信通道**，可选 |
 | 邮件内容边界 | ✅ | 只发送邮箱地址和一次性验证码；密码、WHOOP 数据与旅行数据都不进邮件 |
 | **真实发送验证** | ❌ | 未验证。依赖上面两个 ❓ 项 |
 
@@ -122,7 +122,7 @@
 ## 尚需完成的实测（按顺序）
 
 1. `wrangler d1 migrations list/apply` —— **先迁移，后部署**。
-2. `wrangler secret list` + Resend 控制台，确认 `RESEND_API_KEY` 与 `notify.biotrip.ccwu.cc` 验证状态，实测发一封验证码。
+2. `wrangler secret list` + Resend 控制台，确认 `RESEND_API_KEY` 与 `notify.biotrip.eazylee.si` 验证状态，实测发一封验证码。
 3. 百炼控制台确认余额、`qwen3.7-flash` 免费额度、Managed Agent 10 小时运行时额度剩余与到期日。
 4. 在百炼控制台手工跑一遍三个 Agent（不要拿生产 Worker 当第一次调试）。
 5. `pnpm run build:vinext && pnpm run deploy:vinext`，记录新 Version ID；注意部署后 `auto` 模式生效会走 Managed Agent 计费。

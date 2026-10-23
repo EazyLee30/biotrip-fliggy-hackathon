@@ -81,6 +81,7 @@ export type LocalResearch = {
 };
 
 export type FlyaiInventory = {
+  receipts?: import("../travel-search-types").ToolReceipt[];
   sources: FlyaiSource[];
   searches: number;
   failedSearches: number;
@@ -127,6 +128,7 @@ export type StageInput = {
 };
 
 export type StageContext = {
+  searchIntents?: import("../travel-search-types").SearchIntent[];
   input: StageInput;
   accountId: string;
   signal: AbortSignal;

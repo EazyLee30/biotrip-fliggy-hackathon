@@ -3,13 +3,25 @@
 ## 当前配置
 
 - Worker 名称：`biotrip`
-- 生产域名：`https://biotrip.ccwu.cc`
-- WHOOP OAuth callback：`https://biotrip.ccwu.cc/api/whoop/callback`
+- 生产域名：`https://biotrip.eazylee.si`
+- WHOOP OAuth callback：`https://biotrip.eazylee.si/api/whoop/callback`
 - 配置源：[wrangler.jsonc](../wrangler.jsonc)
 - 应用通过 vinext 部署为 Cloudflare Worker；动态 API 使用服务端运行时，不是静态 Pages 导出。
 - 关闭 vinext 响应缓存、KV 数据缓存和图片优化，避免引入目前不需要的持久缓存或外部图像服务。
 
-Cloudflare 中 `biotrip.ccwu.cc` 区域已启用。Worker 使用 Custom Domain，生产域名已正常解析并提供 HTTPS；不要添加同名 CNAME。
+Cloudflare 中 `eazylee.si` 区域已启用，`biotrip.eazylee.si` 是该区域下的子域名。Worker 使用 Custom Domain，生产域名已正常解析并提供 HTTPS；不要添加同名 CNAME。
+
+## 2026-10-19 域名迁移
+
+生产版本 `dc08c3c4-aaf3-476c-8ac7-d737467ed50f` 已发布至 `https://biotrip.eazylee.si`。Cloudflare 回读确认 BioTrip Worker 仅绑定新 Custom Domain，旧站点入口已解除绑定，DNS 已不再解析。继续使用原 Worker、D1 数据库、Workflow 和服务端密钥；账号、旅程、记忆及 WHOOP 授权记录保留。浏览器的登录 Cookie 不能跨域迁移，访问新域名需要重新登录。
+
+WHOOP Developer Dashboard 的隐私政策和唯一回调已分别改为 `https://biotrip.eazylee.si/privacy`、`https://biotrip.eazylee.si/api/whoop/callback`。Worker 中的 `WHOOP_REDIRECT_URI` 与控制台一致；本次未重新发起真人 WHOOP 授权。
+
+Resend 新发信域 `notify.biotrip.eazylee.si` 已验证。Cloudflare 已添加 DKIM TXT 和两条 DNS only 的 CNAME 记录，Worker 发件人为 `BioTrip <login@notify.biotrip.eazylee.si>`。通过新域名登录界面向 Resend 官方测试地址请求验证码，投递记录确认新发件人及 `Delivered`；测试验证码数据库记录已清理。原发信域的历史验证记录保留，生产配置不再引用。
+
+百炼 FlyAI Vault 的出网白名单已将站点主机替换为新域名，同时保留飞猪官方 API 主机。线上库存 Agent 已更新至版本 4，挂载扫描通过的 `biotrip-flyai-search` Skill 1.1；下载回读确认 Skill 使用新网关地址。仓库源码、分享图片绝对地址、测试样例、Skill 压缩包和文档中的站点引用已同步迁移。
+
+验证：474 项现有测试、TypeScript、相关 ESLint、vinext 生产构建通过；远程 D1 无待执行迁移。新域名首页、登录页、隐私和图片致谢页面均返回 200，匿名 WHOOP 连接正确跳转到新域名登录页，规划任务接口返回 401，未授权 FlyAI 网关返回 404。浏览器确认页面可用，邮件测试投递成功；本次未发起新的付费行程生成。
 
 ## 本地构建与部署
 
@@ -27,7 +39,7 @@ Cloudflare 账号认证使用 `pnpm exec wrangler login`。当前 OAuth 登录�
 
 生产 Worker 非敏感变量：
 
-- `WHOOP_REDIRECT_URI=https://biotrip.ccwu.cc/api/whoop/callback`
+- `WHOOP_REDIRECT_URI=https://biotrip.eazylee.si/api/whoop/callback`
 - `BAILIAN_REGION=cn-beijing`
 - `BAILIAN_PLANNING_MODE=auto`：库存、当地检索、专用编排 Agent 与 FlyAI 密钥库齐备时优先走百炼托管智能体（比赛要求路径），配置缺失时选择标准模型 API；运行中失败不重跑整个流水线。健康 Agent 单独配置。详见[百炼 Agent 配置](bailian-agent-setup.md)。
 
@@ -41,7 +53,7 @@ WHOOP Client ID 已配置在 Worker vars；以下服务端密钥应写入 Cloudf
 
 ## 数据库迁移
 
-`migrations/` 共 6 个文件。**必须先应用迁移，再部署代码。**
+截至 2026-10-19，`migrations/` 共 15 个文件。**必须先应用迁移，再部署代码。**
 
 ```bash
 pnpm exec wrangler d1 migrations list biotrip-users --remote
@@ -57,9 +69,9 @@ pnpm exec wrangler d1 migrations apply biotrip-users --remote
 | `0005_learned_preferences.sql` | `learned_preferences` | 偏好学习静默失效 | 有，`preferences.ts` 返回空 |
 | `0006_preference_kinds.sql` | 扩展 `learned_preferences.kind` | 无法记住密度与守护偏好 | 不降低约束；保留旧记录后迁移 |
 
-2026-10-03 已通过 `wrangler d1 migrations list biotrip-users --remote` 核实全部迁移已应用，返回 `No migrations to apply`。
+2026-10-19 再次通过 `wrangler d1 migrations list biotrip-users --remote` 核实 0001–0015 全部已应用，返回 `No migrations to apply`。后续迁移包括后台任务与版本（0007）、即时调整（0008）、统一记忆与对话（0009–0011）、首次引导（0012）、当日身体状态和独立调整记录（0013）、待安排与清单（0014）、搜索回执和会话清理（0015）。
 
-邮箱验证码通过 Resend 的 HTTPS API 发送，不使用 Cloudflare Workers Email Sending 绑定。发信域使用 `notify.biotrip.ccwu.cc`；在 Resend 中验证该域并按其控制台添加 DNS 记录后，将 API Key 存为 Cloudflare Worker Secret `RESEND_API_KEY`。发件人由非敏感变量 `RESEND_FROM_EMAIL` 设置，当前配置为 `BioTrip <login@notify.biotrip.ccwu.cc>`。Cloudflare Email Routing 可单独用于根域收信转发；它不是登录验证码发信通道。FlyAI API Key 保存在 Worker 后台，并由百炼旅行 Vault 向库存 Skill 注入；Worker 验证请求后用真实 Key 重签官方搜索，避免占位符签名冲突。健康、当地检索与编排 Agent 不绑定飞猪凭据。
+邮箱验证码通过 Resend 的 HTTPS API 发送，不使用 Cloudflare Workers Email Sending 绑定。发信域使用 `notify.biotrip.eazylee.si`；在 Resend 中验证该域并按其控制台添加 DNS 记录后，将 API Key 存为 Cloudflare Worker Secret `RESEND_API_KEY`。发件人由非敏感变量 `RESEND_FROM_EMAIL` 设置，当前配置为 `BioTrip <login@notify.biotrip.eazylee.si>`。Cloudflare Email Routing 可单独用于根域收信转发；它不是登录验证码发信通道。FlyAI API Key 保存在 Worker 后台，并由百炼旅行 Vault 向库存 Skill 注入；Worker 验证请求后用真实 Key 重签官方搜索，避免占位符签名冲突。健康、当地检索与编排 Agent 不绑定飞猪凭据。
 
 BioTrip WHOOP App、百炼 API Key、Resend 与 FlyAI Vault 已配置。2026-10-01 实际调用确认百炼 Key 的模型接口可用；原 Agent `403` 来自 Key 的自定义权限限制，用户确认改为默认业务空间“全部”后 Agent 接口恢复。飞猪凭证只注入旅行 Agent 会话，用户 WHOOP OAuth 授权仍需独立实测。
 
@@ -67,8 +79,8 @@ BioTrip WHOOP App、百炼 API Key、Resend 与 FlyAI Vault 已配置。2026-10-
 
 使用独立的 BioTrip App，不复用目前绑定到 ChatGPT GPT 的 `whooper` App。BioTrip App 已建并登记下列信息：
 
-- Privacy Policy URL：`https://biotrip.ccwu.cc/privacy`
-- Redirect URI：`https://biotrip.ccwu.cc/api/whoop/callback`
+- Privacy Policy URL：`https://biotrip.eazylee.si/privacy`
+- Redirect URI：`https://biotrip.eazylee.si/api/whoop/callback`
 - Scope：`read:recovery`、`read:cycles`、`read:sleep`、`read:workout`、`read:body_measurement`、`read:profile` 及 `offline`。
 
 Client ID、Client Secret 与 Cookie 加密密钥已配置到 Worker。应用处于 Sandbox（最多 10 位成员）；需要 WHOOP 审批升级 Build 后才能面向更多真实用户。注册 callback 不等于 WHOOP 用户已授权。
@@ -184,3 +196,80 @@ Workflow 与应用在同一 Worker 发布，但执行不依赖前端请求。新
 生产版本 `c0d6d885-ca1f-40cb-8084-a3930ef86553` 已通过 `deploy:vinext` 发布完整前后端，保留现有 secrets，新增独立高德 Agent / 环境 / MCP 配置。远程迁移 `0008_adjustments.sql` 已成功，Workflow 和定时任务绑定已确认。上一版本 `3fddeb59-35ca-4577-8d52-81b817ccf25f` 留作回滚参考；新增 schema 与旧代码兼容，不需要删除字段或表。
 
 本地真实 Session、原始 SSE、高德建议采纳与版本保存通过；351 项测试、类型、定向 ESLint、构建和 diff 检查通过。线上首页、许可页及四项样式资源 200，匿名任务/状态接口 401，旧诊断接口 404，浏览器登录页正常；远程数据库无待执行迁移。线上没有重新运行真实路线会诊。详见 [高德接入验收](amap-mobility-setup.md)。
+
+
+## 2026-10-19 对话助手与统一记忆发布
+
+生产版本 `86de0a29-3767-4521-8356-3116c8f39b1a` 已完整发布。迁移前导出生产 D1 备份，0009–0011 成功应用，远程无待执行迁移；保留现有密钥、Workflow 和定时任务。上线抽屉对话、指定旅程操作、版本恢复、统一记忆与自动提取；记忆使用和 WHOOP 使用默认开启，仅在设置中修改，暂不接 ASR。367 项测试、类型、lint、构建通过。浏览器登录页正常，首页及客户端资源 200，匿名助手/记忆/任务接口 401。生产完整登录后规划未重复执行，本地真实模型与任务验证见 [助手执行记录](agent-execution.md)。
+
+
+## 2026-10-19 移动端与确认交互收尾
+
+最新生产版本 `8c06a4c1-70cf-4ead-ba3a-100c11f7870e`。助手仅保留拖动条，记忆/设置/历史改为细线图标；移动弹层去重，输入控件字号至少 16px 并适配键盘视口。所有启用类设置统一绿/白胶囊开关，支持点击与滑动。问答、记忆与候选检索直接处理，创建/修改/恢复安排和最终应用候选仍在消息下允许或拒绝。369 项测试、类型、无警告 lint、构建及本地浏览器验收通过；线上首页、隐私页、客户端资源正常，匿名新接口要求登录。本次无新增数据库迁移。详见 [执行记录](agent-execution.md)。
+
+## 2026-10-19 分层设置与身体仪表盘
+
+先发布分层设置版本 `e75e0a58-d53c-4402-9461-28d159510cdd`，随后发布图形仪表盘版本 `6e30e787-3767-4b51-8981-d905b2ae984a`。WHOOP 负荷、恢复和睡眠表现使用真实量程圆环；步数不设推测目标，未连接隐藏仪表盘。新增 1–5 分疲劳自评图形，其他感受折叠。我的页面逐层进入设置，两个记忆入口使用同一数据与设置；助手补充返回对话和切换上下文清理，保留修改预览、确认与版本保护。
+
+369 项测试、类型、定向 lint、diff 检查与生产构建通过。本地浏览器使用隔离 API fixture 验证已连接/未连接、评分图形、320/390/768 无横向溢出、记忆返回；线上首页和新客户端资源检查正常。真实 WHOOP 账户读数、真实模型完整规划未在本轮重新执行。本次没有新增迁移。
+
+## 2026-10-19 首次偏好积累与分步身体调整
+
+生产版本 `b267cd9b-f7ba-4e9e-973c-7ce3bf22db3a`，完整构建并部署至 https://biotrip.eazylee.si 。先导出生产 D1 备份至忽略目录，再应用 `0012_traveler_onboarding.sql`；远程无待执行迁移。新表仅存首次引导完成/跳过状态，用户确认的习惯仍存入统一 `memory_items`。
+
+- 新用户使用四步图形引导，允许跳过，最终确认才写入。已有旅程用户不被重新打断。后续规划带入有效偏好，保留本次疲劳和固定预约入口；无法识别时区的自由输入城市不会直接预填。
+- 调整首页拆分为“调整今天”和“重新安排旅程”，分别使用独立三步/四步页面。建议先比较变化再应用，保留版本恢复；已应用调整的背景随行程保存，返回后可继续记录感受，长期记忆需另行选择。
+- 对话采用 Markdown 渲染和消息气泡，上方改为命名明确的工具与旅程切换。设置与对话使用同一记忆，所有规划接口在服务器上遵守全局关闭开关。
+
+380 项测试、TypeScript、定向 ESLint、diff 检查和生产构建通过。浏览器以隔离 API 数据验证首次确认前不写入、出发地和节奏回填、简化规划页面、调整预览、应用后的感受记录、完整刷新恢复与320/390/768宽度；感受提交后不重复问询，默认不写入长期记忆。生产首页与新客户端资源返回200，匿名引导/助手/规划接口返回401。此次未重新调用真实模型、飞猪检索或个人 WHOOP 身体记录，实体手机触摸体验仍需真机验收。
+
+## 2026-10-19 全链路与卡片重排升级
+
+主版本 `a780fdcb-874b-456b-8613-ce7e97c2fea9` 已于当日切换到 100% 生产流量。发布前通过 455 项测试、TypeScript、全仓无警告 lint、vinext 生产构建和 diff 检查。
+
+升级包括：今日身体状态与活动时间轴、独立快速减负、持久当日自评、真实反馈学习、图形重排向导、卡片预约与独立前后对照页、完整区间和进度保护、六轮工具执行、统一记忆、八类飞猪适配及查询回执。预约时间修改只有最终采用才写入实际行程，旧草稿使用卡片核对，缺日期的旧活动使用原旅程抵达日归一化。
+
+发布步骤：上传完整前后端 → 旧版 100% / 新版 0% → 携版本覆盖头预检 → 新版 100%。0% 预检的首页、隐私、许可、6 项 CSS 与 3 项 JS 均 200；匿名对话、任务、身体状态及同源搜索均 401；缺 Origin 的 POST 正确返回 CSRF 403。默认生产请求随后核对了新 CSS/JS 资源标识；登录浏览器看到“今天 / 调整 / 发现 / 我的”新导航，WHOOP 图形读取成功，历史 Markdown 回答正常渲染。
+
+数据库 0013–0015 已增量应用，发布前复核 `No migrations to apply`。本次数据库恢复点使用 Cloudflare 服务器端 Time Travel，bookmark：`000001ce-00000000-00005109-b58242520d2b66dbb25f39003acd9eaf`。没有导出用户记录到本地。
+
+回退基线：`b267cd9b-f7ba-4e9e-973c-7ce3bf22db3a`。必要时使用 `pnpm exec wrangler versions deploy b267cd9b-f7ba-4e9e-973c-7ce3bf22db3a@100 --yes --config dist/server/wrangler.json` 回退代码；保留增量数据库表及发布后的用户写入。Time Travel 恢复会覆盖恢复点之后的数据，不作为普通代码回退步骤自动执行。本次未发生生产回退。
+
+### 搜索与预览验收补丁
+
+搜索与预览补丁 `c11c6697-9e30-4047-9459-e4b95ee2a96d` 曾切换到 100%。466 项测试、类型检查、全仓 lint、生产构建通过。采用[Cloudflare 版本覆盖预检](https://developers.cloudflare.com/workers/versions-and-deployments/version-overrides/)，保持主版本 100%、补丁 0% 时完成 28 项检查，包括公开页面、21 项静态资源和匿名受保护接口。客户端入口 `/_next/static/chunks/index-CxwT24Cg.js` 与主版本不同，确认预检加载补丁资源。
+
+补丁修正交通时长单位、实际商品分类、茶饮/咖啡/餐饮/按摩服务来源匹配、明确搜索次数与类型限制、本轮禁止读取记忆/身体记录的执行限制、新对话清除旧错误，以及跨日期变更线的旧预约预览日期。没有新增迁移。补丁代码可回退到本次主版本 `a780fdcb-874b-456b-8613-ce7e97c2fea9`，无需回退数据库。
+
+线上实测航班返回 6 个真实来源条目，缺票价保留未知；新的连续会话两轮成功，刷新后恢复。曾出现一次旧会话 404，根因未确认，不宣称已修复，未自动重建或删除其历史。相关限制与证据详见 [完整验收报告](full-chain-acceptance.md)。
+
+### 回复恢复补丁
+
+回复恢复补丁 `e16e30a7-c6ec-4bd1-b90b-af9187051442` 曾切换到 100%。472 项测试、全仓 TypeScript / lint、生产构建及 28 项 0% 流量预检通过；入口为 `/_next/static/chunks/index-613oN1sN.js`。没有新迁移。
+
+本补丁在最多六轮内增加一次最终操作格式纠正；已有检索不再追加查询，未知动作和记忆写入不会执行，回复只使用真实结果摘要。查询失败/未知与真实无匹配分开呈现。本地真实模型请求只产生一次语义查询尝试，正确保留未配置供应商的失败回执，刷新后消息可读取。必要时仅回退代码到 `c11c6697-9e30-4047-9459-e4b95ee2a96d`，不回退数据库。
+
+### 最终本轮回执补丁
+
+最终生产版本 `e8507fe6-96ed-4fc2-be73-9b850158568c` 已切换到 100%。474 项测试、全仓类型检查、lint、生产构建与 28 项 0% 流量预检通过；客户端入口为 `/_next/static/chunks/index-DFwYdahx.js`。无新增迁移。
+
+明确受限的搜索请求必须有本轮真实调用，历史结果不能代替当前查询；仍未执行时明确说明未完成。尝试检索但无回执的异常同样不能被描述为成功。澄清、复述和禁止搜索不会被强制发起新查询。一次格式纠正和原搜索预算保持不变；常规代码回退保留数据库写入。
+
+最终线上登录浏览器在同一会话复测“只做一次语义搜索：杭州西湖附近的茶馆或下午茶产品”，完成回复为“这次检索没有找到匹配结果”，附服务来源不匹配的明确说明，没有出现无依据的酒店/景点推荐或额外检索。该结果验证真实供应商链路的诚实空态，不代表已找到可预订茶馆。普通访客页面确认新入口资源，最终无后续待发布代码修复。
+
+## 2026-10-19 行程一级导航与 WHOOP 身体记录发布
+
+生产版本 `93829f27-1785-4b8d-97fa-fc91fcf12598` 已于 22:16（北京时间）切换至 100% 流量，入口为 `https://biotrip.eazylee.si`。底部导航调整为“今天 / 行程 / 发现 / 我的”，行程直接展示完整时间轴，并提供当日调整和整段重排；WHOOP 首页保留摘要，完整仪表盘统一至身体记录页，设备与数据负责连接管理。保留已上线的新对话入口及会话行为。
+
+验证：478 项测试、TypeScript、相关 ESLint、最终 vinext 生产构建及 diff 检查通过。通过 `deploy:vinext --skip-build --no-promote` 上传，保持旧版 100% / 新版 0%，按 [Cloudflare 版本覆盖](https://developers.cloudflare.com/workers/versions-and-deployments/version-overrides/) 完成 24 项预检后切流；默认生产请求再次通过同样的 24 项检查。首页、登录、隐私、许可页面与 16 项前端资源正常，资源 SHA-256 与本次构建一致；匿名任务、会话、同源搜索均返回 401，无 Origin 的搜索 POST 返回 403。客户端入口为 `/_next/static/chunks/index-cwFFi9YR.js`，仪表盘模块为 `/_next/static/chunks/planner-dashboard-B7FYQPIh.js`。浏览器确认登录页加载新入口、无控制台错误；本次生产浏览器未登录，登录后交互验收沿用已完成的本地验证，未重新发起 WHOOP 授权或付费规划。
+
+没有新增数据库迁移。版本回读确认现有变量、密钥绑定、D1 和 Workflow 均保留，Cloudflare 部署状态确认新版占 100%。回退基线为发布前实际生产版本 `23fbc82b-47a4-475e-8f1c-31460a5a121b`；如需回退代码，使用 `pnpm exec wrangler versions deploy 23fbc82b-47a4-475e-8f1c-31460a5a121b@100 --yes --config dist/server/wrangler.json`，保留用户数据。
+
+
+## 2026-10-23 产品首页与宣传片
+
+产品首页发布到原域名根路径，应用迁至 `/app`，保留查询参数和旧片段链接、WHOOP OAuth 回跳、登录及 PWA 入口兼容。作者/团队为 Eazy Lee。详见 [产品首页说明](product-landing-page.md)。
+
+生产版本 `3d5561ef-876a-40e2-b921-b839951eb9ee` 已切至 100% 流量。486 项测试、TypeScript、相关 ESLint、vinext 构建通过；0% 流量下 35 项线上预检通过，公开生产访问 35 项复验通过（切流期间湖畔图一次 404，重试后状态和 SHA-256 正确）。正式浏览器播放 WHOOP 章节、跳转反馈章节及保留登录进入原旅程均验证通过。影片采用 1080p、157.013 秒、13,948,597 字节的网页编码，通过 `/api/film/v3` 流式响应 Range/206，兼容 ASSETS 不提供 Content-Length 的生产行为。
+
+D1 无待执行迁移；原 D1、Workflow、定时任务、域名和 secrets 保留。代码回退基线为 `93829f27-1785-4b8d-97fa-fc91fcf12598`，无需回退数据库。检查证据在 `output/landing-check-20261023/`。本次未提交 GitHub 参赛 Issue，也未改变源码仓库可见性。

@@ -3,16 +3,17 @@ import { test } from "node:test";
 import { loadModule, plain } from "./test-support/module-loader.mjs";
 
 function fixture(reply, contentType = "application/json") {
-  const calls = [];
+  const calls = [], logs = [];
   const api = loadModule("lib/flyai.ts", {
     "./upstream-response": { readBoundedUpstream: async response => response.text() },
     "./planning/flyai-sources": { extractFlyaiSources: data => data.sources ?? [] },
   }, {
     Headers, Response,
+    console: { info(...values) { logs.push(values); } },
     process: { env: { FLYAI_API_KEY: "fake-key", FLYAI_SIGN_SECRET: "fake-secret" } },
     fetch: async (url, init) => { const request = JSON.parse(init.body); calls.push({ url, request, headers: init.headers, redirect: init.redirect }); return new Response(reply(request), { headers: { "Content-Type": contentType } }); },
   });
-  return { api, calls, signal: new AbortController().signal };
+  return { api, calls, logs, signal: new AbortController().signal };
 }
 test("schema discovery signs tools/list, follows pagination and never calls a paid search", async () => {
   const f = fixture(request => JSON.stringify({ jsonrpc: "2.0", result: request.params?.cursor
@@ -35,4 +36,17 @@ test("search still requires verified status and uses signed tools/call", async (
   const result = await f.api.searchFlyai("search_poi", { city: "杭州" }, f.signal, "景点");
   assert.equal(result.verified, true); assert.equal(f.calls[0].request.method, "tools/call"); assert.deepEqual(plain(f.calls[0].request.params.arguments), { city: "杭州" });
   await assert.rejects(f.api.searchFlyai("purchase", {}, f.signal, "景点"), error => error.code === "FLYAI_READ_ONLY");
+});
+
+test("successful semantic string data reaches the bounded parser without rejecting the API response", async () => {
+  const f = fixture(() => JSON.stringify({ result: { content: [{ type: "text", text: JSON.stringify({ status: 0, message: "success", data: JSON.stringify({ itemList: [] }) }) }] } }));
+  assert.equal((await f.api.searchFlyai("fliggy_ai_search", { query: "杭州酒店" }, f.signal, "住宿")).verified, true);
+});
+
+test("unverified response diagnostics never log provider prose or echoed credentials", async () => {
+  const canary = "provider-echoed-private-marker";
+  const f = fixture(() => JSON.stringify({ result: { content: [{ type: "text", text: JSON.stringify({ status: 4, message: canary, systemMessage: canary, data: { [canary]: "unknown" } }) }] } }));
+  await assert.rejects(f.api.searchFlyai("search_poi", { cityName: "杭州" }, f.signal, "景点"), error => error.code === "FLYAI_OUTPUT_UNVERIFIED");
+  assert.equal(f.logs.length, 1);
+  assert.doesNotMatch(JSON.stringify(f.logs), new RegExp(canary));
 });

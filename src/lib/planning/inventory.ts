@@ -1,38 +1,40 @@
 import type { StageContext } from "./contract";
 import type { FlyaiEvidenceCommand } from "@/lib/bailian-evidence";
 import { transportCityFor } from "@/lib/places";
-
-const GATEWAY_PREFIX = "DEBUG_FLYAI_MCP_URL=https://biotrip.ccwu.cc/api/flyai/mcp flyai";
-const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+import { routeSearchIntent, travelQueries } from "../travel-search-routing";
+import type { TravelQuery } from "../travel-search-types";
 
 /** One fixed, read-only CLI query per requested category; no model query loops. */
-export function skillInventoryQueries(ctx: StageContext): { commands: FlyaiEvidenceCommand[]; unsearchedCategories: string[] } {
+export function skillInventoryQueries(ctx: Pick<StageContext, "searchIntents"> & { input: StageContext["input"]; timing: Pick<StageContext["timing"], "arrivalDate"> }): { commands: FlyaiEvidenceCommand[]; queries: TravelQuery[]; unsearchedCategories: string[] } {
+  if (ctx.searchIntents) {
+    const queries = travelQueries(ctx.searchIntents);
+    return { commands: queries, queries, unsearchedCategories: [] };
+  }
   const trip = ctx.input.trip!;
-  const commands: FlyaiEvidenceCommand[] = [];
+  const queries: TravelQuery[] = [];
   const unavailable: string[] = [];
   if (trip.requestedServices.includes("flights")) {
     const origin = transportCityFor(trip.originCity);
     const destination = transportCityFor(trip.destinationCity);
-    if (origin && destination && origin !== destination) commands.push({
-      category: "航班",
-      command: `${GATEWAY_PREFIX} search-flight --origin ${quote(origin)} --destination ${quote(destination)} --dep-date ${quote(trip.departureDate)}${trip.returnDate ? ` --back-date ${quote(trip.returnDate)}` : ""}`,
-    });
+    if (origin && destination && origin !== destination) queries.push(routeSearchIntent({ kind: "flight", origin, destination,
+      departureDate: trip.departureDate, ...(trip.returnDate ? { returnDate: trip.returnDate } : {}) }));
     else unavailable.push(origin && origin === destination ? "航班（出发地与目的地位于同一交通城市）" : "航班（区域尚未确定交通城市）");
   }
+  if (trip.requestedServices.includes("hotels")) queries.push(routeSearchIntent({ kind: "hotel", city: trip.destinationCity,
+    checkInDate: ctx.timing.arrivalDate, ...(trip.returnDate && trip.returnDate > ctx.timing.arrivalDate ? { checkOutDate: trip.returnDate } : {}) }));
+  if (trip.requestedServices.includes("attractions")) queries.push(routeSearchIntent({ kind: "poi", city: trip.destinationCity }));
   for (const item of [
-    { key: "hotels", label: "酒店", category: "住宿" },
-    { key: "attractions", label: "景点门票", category: "景点与体验" },
     { key: "transport", label: "当地交通 接送", category: "交通" },
     { key: "travel_insurance", label: "旅游保险", category: "旅行服务" },
   ]) {
     if (trip.requestedServices.includes(item.key)) {
-      commands.push({ category: item.category, command: `${GATEWAY_PREFIX} keyword-search --query ${quote(`${trip.destinationCity} ${ctx.timing.arrivalDate} ${item.label}`)}` });
+      queries.push({ ...routeSearchIntent({ kind: "keyword", query: `${trip.destinationCity} ${ctx.timing.arrivalDate} ${item.label}` }), category: item.category });
     }
   }
-  if (!commands.length) commands.push({ category: "景点与体验", command: `${GATEWAY_PREFIX} keyword-search --query ${quote(`${trip.destinationCity} 景点门票`)}` });
+  if (!queries.length) queries.push(routeSearchIntent({ kind: "poi", city: trip.destinationCity }));
   // The deployed read-only Skill permits at most four searches. A fifth
   // category is explicitly unverified rather than silently claimed as covered.
-  return { commands: commands.slice(0, 4), unsearchedCategories: [...unavailable, ...commands.slice(4).map((item) => item.category)] };
+  return { commands: queries.slice(0, 4), queries: queries.slice(0, 4), unsearchedCategories: [...unavailable, ...queries.slice(4).map((item) => item.category)] };
 }
 
 export function flyaiInventoryPrompt(ctx: StageContext, commands: readonly FlyaiEvidenceCommand[]) {

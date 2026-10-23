@@ -1,0 +1,3 @@
+PRAGMA foreign_keys = ON;
+ALTER TABLE agent_settings ADD COLUMN use_memory INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE agent_settings ADD COLUMN use_whoop INTEGER NOT NULL DEFAULT 1;

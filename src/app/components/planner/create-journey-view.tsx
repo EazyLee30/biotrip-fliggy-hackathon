@@ -1,5 +1,7 @@
 "use client";
-import { useEffect } from "react";
+import { StepTransition } from "../ui/motion-provider";
+import { ToggleSwitch } from "../toggle-switch";
+import { useEffect, useState } from "react";
 import type * as React from "react";
 import type { SetStateAction } from "react";
 import type { PlannerInputs, TripForm } from "./use-planner-inputs";
@@ -17,8 +19,11 @@ import { ReservationEditor } from "./reservation-editor";
 import { QuickRating, PhraseInput } from "./quick-inputs";
 import { GuardrailToggles } from "./blocks/guardrails";
 import { DayReview } from "./blocks/day-review";
+import { FatigueCheckIn } from "./fatigue-check-in";
+import ui from "./onboarding.module.css";
 
 type Props = Pick<PlannerInputs, "form" | "setForm" | "setConsent" | "intention" | "setIntention" | "fatigue" | "setFatigue" | "scheduleOpen" | "setScheduleOpen" | "stress" | "bodyFeedback" | "ambient" | "setAmbient" | "setStress" | "setBodyFeedback" | "includeWhoop" | "setIncludeWhoop" | "includeMemory" | "setIncludeMemory"> & {
+  preferencesReady?: boolean;
   step: number;
   plan: JourneyGeneratedPlan | null;
   loading: boolean;
@@ -47,7 +52,8 @@ type Props = Pick<PlannerInputs, "form" | "setForm" | "setConsent" | "intention"
   navigate: (next: AppView, intent?: NavigationIntent) => Promise<void>;
   renderConsent: () => React.JSX.Element;
 };
-export function CreateJourneyView({ step, plan, loading, setStep, setError, setCityPicker, form, setForm, setConsent, today, intention, setIntention, fatigue, setFatigue, busy, update, reservationRange, scheduleOpen, setScheduleOpen, stress, bodyFeedback, ambient, setAmbient, setStress, setBodyFeedback, healthStatus, whoopConnected, health, healthLoading, healthError, includeWhoop, setIncludeWhoop, whoopConfigured, memoryText, includeMemory, setIncludeMemory, serviceReady, journey, setDayDetail, setActivity, openPlanEditor, setShareOpen, planner, transition, navigate, renderConsent }: Props) {
+export function CreateJourneyView({ preferencesReady = false, step, plan, loading, setStep, setError, setCityPicker, form, setForm, setConsent, today, intention, setIntention, fatigue, setFatigue, busy, update, reservationRange, scheduleOpen, setScheduleOpen, stress, bodyFeedback, ambient, setAmbient, setStress, setBodyFeedback, healthStatus, whoopConnected, health, healthLoading, healthError, includeWhoop, setIncludeWhoop, whoopConfigured, memoryText, includeMemory, setIncludeMemory, serviceReady, journey, setDayDetail, setActivity, openPlanEditor, setShareOpen, planner, transition, navigate, renderConsent }: Props) {
+    const [editPreferences, setEditPreferences] = useState(false);
     useEffect(() => {
       if (!PLACES.some(place => place.city === form.destinationCity)) return;
       const controller = new AbortController();
@@ -56,10 +62,17 @@ export function CreateJourneyView({ step, plan, loading, setStep, setError, setC
       }, 800);
       return () => { clearTimeout(timer); controller.abort(); };
     }, [form.destinationCity]);
-    return <div className={`${styles.stack} ${styles.wizardStack}`}>
+    return <StepTransition step={step} className={`${styles.stack} ${styles.wizardStack}`}>
       <div className={styles.wizardProgress}><Badge tone={step === 2 ? "mint" : "muted"}>● 第 {Math.min(step, 2) + 1} / 3 步 · {STEP_LABELS[step]}</Badge>{[0, 1, 2].map((index) => <button key={index} className={index <= step ? styles.active : ""} aria-label={`前往第 ${index + 1} 步，${STEP_LABELS[index]}`} disabled={index > step || (index === 3 && !plan) || loading} onClick={() => { setStep(index); setError(""); }} />)}</div>
+      {step === 1 && preferencesReady && !editPreferences && <section className={ui.returning}>
+        <span className={styles.eyebrow}>已经认识你一点了</span><h1>按你熟悉的节奏出发。</h1><p>偏好已带入，只补充这次的变化。</p>
+        <div className={ui.remembered}><Icon name="leaf"/><div><strong>{form.paceLevel === "gentle" ? "轻松慢游" : form.paceLevel === "active" ? "多看一点" : "走走停停"}</strong><small>{form.foodPreferences || "跟随自己的节奏"}</small></div><button className={styles.textButton} disabled={busy || loading} onClick={()=>setEditPreferences(true)}>修改</button></div>
+        <FatigueCheckIn value={fatigue} disabled={busy || loading} onChange={value=>{setFatigue(value);setConsent(false);}}/>
+        <details className={ui.reservations}><summary><span><Icon name="calendar"/>这次有已经订好的安排？</span><small>选填</small></summary><ReservationEditor value={form.itineraryText} tripStart={reservationRange.start} tripEnd={form.returnDate ? reservationRange.end : ""} disabled={busy || loading} onChange={value=>{update("itineraryText",value);setConsent(false);setError("");}}/></details>
+      </section>}
+
       {step === 0 ? <>
-        <div className={`${styles.pageIntro} ${styles.compactIntro}`}><h1>去哪里，待多久？</h1><p>点选城市和日期，一次确认整段旅程。仅用目的地城市预取景点实景。</p></div>
+        <div className={`${styles.pageIntro} ${styles.compactIntro}`}><h1>去哪里，待多久？</h1><p>选好目的地和日期，就可以开始。</p></div>
         <div className={styles.bookingGrid}>
           <section className={`${styles.card} ${styles.routeCard}`}>
             <div className={styles.sectionHead}><span><Icon name="compass" size={18} /><strong>城市与日期</strong></span><Badge tone="mint">自由选择</Badge></div>
@@ -72,15 +85,15 @@ export function CreateJourneyView({ step, plan, loading, setStep, setError, setC
             <DateRangePicker start={form.departureDate} end={form.returnDate} today={today} onChange={(next) => { setForm((current) => ({ ...current, departureDate: next.start, returnDate: next.end })); setConsent(false); }} />
             <p className={styles.note}>行程按目的地当地日期安排，单次最多规划 {MAX_TRIP_DAYS} 天。</p>
           </section>
-          <aside className={`${styles.card} ${styles.routeOverview}`}><div className={styles.sectionHead}><span><Icon name="leaf" size={18} /><strong>这次的旅行方向</strong></span></div><h3>{INTENTS.find((item) => item.value === intention)?.name || "跟随自己的节奏"}</h3><p>{INTENTS.find((item) => item.value === intention)?.detail}</p><div className={styles.inset}><Icon name="shield" size={16} /><p>先确认地点和日期，下一步再设置活动密度、固定安排和当地体验。</p></div><button className={styles.textButton} onClick={() => setStep(0)}>修改旅行意图 <Icon name="edit" size={14} /></button></aside>
+          <aside className={`${styles.card} ${styles.routeOverview}`}><div className={styles.sectionHead}><span><Icon name="leaf" size={18} /><strong>这次的旅行方向</strong></span></div><h3>{INTENTS.find((item) => item.value === intention)?.name || "跟随自己的节奏"}</h3><p>{INTENTS.find((item) => item.value === intention)?.detail}</p><div className={styles.inset}><Icon name="shield" size={16} /><p>先确认地点和日期，下一步再设置活动密度、固定安排和当地体验。</p></div><button className={styles.textButton} onClick={() => { setStep(1); setEditPreferences(true); }}>修改旅行意图 <Icon name="edit" size={14} /></button></aside>
         </div>
-      </> : null}      {step === 1 ? <>
+      </> : null}      {step === 1 && (!preferencesReady || editPreferences) ? <>
         <div className={`${styles.pageIntro} ${styles.compactIntro}`}><h1>这趟旅程，想怎样度过？</h1><p>选一个最贴近此刻的方向，途中也可以调整。</p></div>
         <div className={styles.compactIntentGrid}>{INTENTS.map((item) => <button key={item.value} className={`${styles.intentCard} ${styles.compactIntent} ${intention === item.value ? styles.selected : ""}`} aria-pressed={intention === item.value} onClick={() => { setIntention(item.value); setConsent(false); }}><div className={styles.intentHeader}><Icon name={item.icon} size={19} /><span className={styles.radio}>{intention === item.value ? <Icon name="check" size={13} /> : null}</span></div><strong>{item.name}</strong><small>{item.subtitle}</small></button>)}</div>
         <div className={styles.selectedIntent}><Icon name="leaf" size={16} /><p>{INTENTS.find((item) => item.value === intention)?.detail}</p></div>
         <section className={`${styles.card} ${styles.compactCard}`}><div className={styles.sectionHead}><span><Icon name="pulse" size={17} /><strong>现在的感受</strong></span><small>可选 · 主观自评</small></div><div className={styles.feelingOptions}>{[["1", "轻松有活力"], ["3", "想稍微放慢"], ["5", "需要好好休息"]].map(([value, name]) => <button key={value} className={fatigue === value ? styles.selected : ""} aria-pressed={fatigue === value} onClick={() => { setFatigue(fatigue === value ? "" : value); setConsent(false); }}>{name}</button>)}</div></section>
       </> : null}
-{step === 1 ? <>
+{step === 1 && (!preferencesReady || editPreferences) ? <>
 
         <div className={`${styles.pageIntro} ${styles.compactIntro}`}><h1>按你的节奏安排。</h1><p>选择活动密度，其他偏好可以按需补充。</p></div>
         <div className={styles.wideGrid}>
@@ -102,9 +115,9 @@ export function CreateJourneyView({ step, plan, loading, setStep, setError, setC
             <section className={`${styles.card} ${styles.preferencesCard}`}><details className={styles.advancedDetails}><summary><span>旅途守护</span><small>已开启 {Object.values(form.guardrails).filter(Boolean).length} 项</small></summary><div><GuardrailToggles value={form.guardrails} disabled={loading || busy} onChange={(next) => { update("guardrails", next); setConsent(false); }} /></div></details>
               <details className={styles.advancedDetails}><summary><span>身体记录与旅行记忆</span><small>{healthStatus}</small></summary><div>
               <div className={styles.inset}><Icon name="pulse" /><div><strong>WHOOP</strong><p>{whoopConnected ? health ? `最近记录：恢复 ${number(health.recoveryScore)}% · 睡眠 ${sleepDuration(health.sleepMinutes)}` : healthLoading ? "授权已保存，正在读取记录。" : healthError || "近期暂无可用记录。" : "连接后可结合近期恢复、睡眠与活动记录。"}</p></div></div>
-              {whoopConnected ? <label className={styles.checkLabel}><input type="checkbox" checked={includeWhoop} onChange={(event) => { setIncludeWhoop(event.target.checked); setConsent(false); }} /><span>本次规划使用 WHOOP 近期记录</span></label> : whoopConfigured ? <a className={styles.secondaryButton} href="/api/whoop/connect">连接 WHOOP ↗</a> : <p className={styles.note}>目前可使用主观自评与旅行偏好继续规划。</p>}
+              {whoopConnected ? <label className={styles.checkLabel}><ToggleSwitch label="本次规划使用 WHOOP" checked={includeWhoop} onChange={(enabled) => { setIncludeWhoop(enabled); setConsent(false); }} /><span>本次规划使用 WHOOP 近期记录</span></label> : whoopConfigured ? <a className={styles.secondaryButton} href="/api/whoop/connect">连接 WHOOP ↗</a> : <p className={styles.note}>目前可使用主观自评与旅行偏好继续规划。</p>}
               <p className={styles.note}>未来旅程的身体状态仍会变化，抵达后可以重新规划。</p>
-              {memoryText ? <label className={styles.checkLabel}><input type="checkbox" checked={includeMemory} onChange={(event) => { setIncludeMemory(event.target.checked); setConsent(false); }} /><span>使用我的旅行偏好与旅程记忆</span></label> : null}</div></details>
+              {memoryText ? <label className={styles.checkLabel}><ToggleSwitch label="使用旅行记忆" checked={includeMemory} onChange={(enabled) => { setIncludeMemory(enabled); setConsent(false); }} /><span>使用我的旅行偏好与旅程记忆</span></label> : null}</div></details>
             <details className={styles.advancedDetails}><summary><span>当地体验与饮食</span><small>已选 {form.requestedServices.length} 项</small></summary><div>
               <div className={styles.serviceGrid}>{SERVICES.map(([value, label]) => <label className={styles.serviceOption} key={value}><input type="checkbox" checked={form.requestedServices.includes(value)} onChange={() => update("requestedServices", toggle(form.requestedServices, value))} />{label}</label>)}</div>
               <PhraseInput label="饮食喜好或限制" value={form.foodPreferences} onChange={(next) => update("foodPreferences", next)} phrases={["少辣", "清淡", "素食", "不吃海鲜"]} maxLength={500} rows={2} placeholder="补充口味、忌口或过敏信息" disabled={loading || busy} /></div></details>
@@ -136,5 +149,5 @@ export function CreateJourneyView({ step, plan, loading, setStep, setError, setC
           <button className={styles.primaryButton} onClick={() => setStep(0)}><Icon name="arrow" />回到上一步补全</button>
         </div>
       ) : null}
-    </div>;
+    </StepTransition>;
   }

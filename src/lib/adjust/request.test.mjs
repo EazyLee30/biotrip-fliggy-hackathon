@@ -11,3 +11,10 @@ const proposal={id:'p1',title:'缩短停留',reason:'少走一点',angle:'pace',
 const candidate={kind:'adjustment',scope:raw().scope,proposals:[proposal]};
 test('partial application retains unselected activities, fixed reservations and generation provenance',()=>{const saved=applyAdjustments(journey.plan,candidate,['p1'],journey.draft.trip,'14:30');assert.equal(saved.plan.itinerary[1].durationMin,45);assert.deepEqual(saved.plan.itinerary[2],journey.plan.plan.itinerary[2]);assert.equal(saved.retrievedAt,journey.plan.retrievedAt);assert.equal(journey.plan.plan.itinerary[1].durationMin,90);assert.equal(saved.manualAdjustment.operationCount,1);});
 test('unknown, repeated, empty and elapsed selections are refused',()=>{for(const chosen of [[],['missing'],['p1','p1'],[{}]])assert.throws(()=>applyAdjustments(journey.plan,candidate,chosen,journey.draft.trip));assert.throws(()=>applyAdjustments(journey.plan,candidate,['p1'],journey.draft.trip,'15:01'));});
+test('applied adjustments retain only accepted titles and self-rating for the follow-up',()=>{
+ const saved=applyAdjustments(journey.plan,{...candidate,fatigueBefore:4,proposals:[proposal,{...proposal,id:'unused',title:'未采用的建议'}]},['p1'],journey.draft.trip,'14:30');
+ assert.equal(saved.bodyAdjustment.fatigueBefore,4);
+ assert.deepEqual(saved.bodyAdjustment.changes,['缩短停留']);
+ assert.ok(Number.isFinite(Date.parse(saved.bodyAdjustment.updatedAt)));
+ assert.equal(journey.plan.bodyAdjustment,undefined);
+});

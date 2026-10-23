@@ -14,7 +14,7 @@ import { getCurrentAccount } from "@/lib/auth";
 export const runtime = "nodejs";
 
 function returnToApp(request: Request, outcome: string, providerError?: string) {
-  const destination = new URL("/", request.url);
+  const destination = new URL("/app", request.url);
   destination.searchParams.set("whoop", outcome);
   if (providerError) destination.searchParams.set("whoop_error", providerError);
   return NextResponse.redirect(destination);
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
   if (!account) {
     await clearOAuthState();
-    return NextResponse.redirect(new URL("/login?next=%2F", request.url));
+    return NextResponse.redirect(new URL("/login?next=%2Fapp", request.url));
   }
 
   if (error) {

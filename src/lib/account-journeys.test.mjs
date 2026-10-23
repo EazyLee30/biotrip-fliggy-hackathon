@@ -1,15 +1,16 @@
+import * as protection from "./adjust/protection.ts";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { loadModule, plain, readProjectFile } from "./test-support/module-loader.mjs";
 
-const itineraryEdit = loadModule("lib/itinerary-edit.ts", { "./planner-input": loadModule("lib/planner-input.ts") });
+const itineraryEdit = loadModule("lib/itinerary-edit.ts", { "./adjust/protection": protection, "./planner-input": loadModule("lib/planner-input.ts") });
 
 const ACCOUNT = "11111111-1111-1111-1111-111111111111";
 const OTHER = "22222222-2222-2222-2222-222222222222";
 const MIGRATIONS = [
   "0001_accounts.sql", "0002_password_auth.sql", "0003_journeys.sql",
-  "0004_whoop_connections.sql", "0005_learned_preferences.sql", "0006_preference_kinds.sql", "0007_planning_jobs.sql",
+  "0004_whoop_connections.sql", "0005_learned_preferences.sql", "0006_preference_kinds.sql", "0007_planning_jobs.sql", "0013_body_journey.sql", "0008_adjustments.sql", "0009_agent_memory.sql", "0010_memory_undo.sql", "0011_agent_defaults.sql", "0012_traveler_onboarding.sql",
 ];
 
 function storage() {
@@ -44,7 +45,8 @@ function fixture() {
   // exercised end to end rather than stubbed away.
   const preferences = loadModule("lib/preferences.ts", { "@/lib/database": { getDatabase: () => database } });
   const journeys = loadModule("lib/journeys.ts", { "@/lib/database": { getDatabase: () => database }, "@/lib/preferences": preferences, "@/lib/itinerary-edit": itineraryEdit });
-  return { journeys, preferences, sqlite };
+  const onboarding=loadModule("lib/onboarding.ts", {"@/lib/database":{getDatabase:()=>database},"@/lib/journeys":journeys,"./onboarding-options":loadModule("lib/onboarding-options.ts")});
+  return { journeys, preferences, onboarding, sqlite };
 }
 const DRAFT = {
   intention: "安静恢复", colorTone: "松林绿", consent: true,
@@ -170,7 +172,7 @@ test("repeated choices become remembered preferences and one-off choices do not"
   } finally { sqlite.close(); }
 });
 
-test("in-trip fatigue teaches a slower default for later trips", async () => {
+test("temporary fatigue does not become a standing travel preference", async () => {
   const { journeys, preferences, sqlite } = fixture();
   try {
     let journey = await journeys.saveGeneratedJourney(ACCOUNT, { draft: DRAFT, generated: PLAN });
@@ -178,8 +180,8 @@ test("in-trip fatigue teaches a slower default for later trips", async () => {
     await journeys.recordJourneyFeedback(ACCOUNT, journey.id, { version: journey.version, fatigue: 5, subjectiveStress: 4 });
     await journeys.recordJourneyFeedback(ACCOUNT, journey.id, { version: journey.version + 1, fatigue: 4 });
     const defaults = preferences.preferenceDefaults(await preferences.listLearnedPreferences(ACCOUNT));
-    assert.ok(defaults.notes.some((note) => note.includes("抵达当天优先留出休息")));
-    assert.ok(defaults.notes.some((note) => note.includes("疲惫时倾向放慢节奏")));
+    assert.equal(defaults.notes.some((note) => note.includes("抵达当天优先留出休息")), false);
+    assert.equal(defaults.notes.some((note) => note.includes("疲惫时倾向放慢节奏")), false);
   } finally { sqlite.close(); }
 });
 
@@ -299,4 +301,51 @@ test("verified accounts set one first password, then use passwords without more 
     assert.equal(auth.safeAuthNext("/\\example.com"), "/");
     assert.equal(auth.safeAuthNext("/?view=create"), "/?view=create");
   } finally { sqlite.close(); }
+});
+
+test("adjustment outcome is account-owned, bound to the current adjustment and does not silently create memory", async () => {
+  const { journeys, sqlite } = fixture();
+  try {
+    const stamp="2026-10-19T06:00:00.000Z";
+    let journey=await journeys.saveGeneratedJourney(ACCOUNT,{draft:DRAFT,generated:{...PLAN,bodyAdjustment:{updatedAt:stamp,fatigueBefore:4,changes:["缩短步行"]}}});
+    journey=await journeys.updateJourney(ACCOUNT,journey.id,{version:journey.version,status:"active"});
+    await assert.rejects(journeys.recordJourneyFeedback(OTHER,journey.id,{version:journey.version,note:"轻松了一些",adjustmentAt:stamp}));
+    await assert.rejects(journeys.recordJourneyFeedback(ACCOUNT,journey.id,{version:journey.version,note:"轻松了一些",adjustmentAt:"2026-10-18T06:00:00.000Z"}),e=>e.code==="ADJUSTMENT_CHANGED");
+    assert.equal((await journeys.listJourneyFeedback(ACCOUNT,journey.id)).length,0);
+    await journeys.recordJourneyFeedback(ACCOUNT,journey.id,{version:journey.version,note:"轻松了一些",fatigue:2,adjustmentAt:stamp});
+    const items=await journeys.listJourneyFeedback(ACCOUNT,journey.id);
+    assert.equal(items[0].adjustmentAt,stamp);
+    assert.equal(items[0].fatigue,2);
+    assert.equal((await journeys.listJourneyMemories(ACCOUNT)).length,0);
+    assert.throws(()=>journeys.parseFeedback({version:1,note:"反馈",adjustmentAt:"invalid"}));
+  } finally { sqlite.close(); }
+});
+
+test("first-run habits are explicitly confirmed, atomic, account-owned and not duplicated on retry", async()=>{
+ const {onboarding,sqlite}=fixture();
+ try {
+  assert.equal((await onboarding.onboardingStatus(ACCOUNT)).needed,true);
+  const input={pace:"gentle",habits:["rest","quiet"],homeCity:"上海",food:"少辣",confirm:true};
+  assert.throws(()=>onboarding.parseOnboarding({...input,confirm:false}));
+  assert.throws(()=>onboarding.parseOnboarding({...input,pace:"unknown"}));
+  await onboarding.saveOnboarding(ACCOUNT,input);
+  assert.equal((await onboarding.onboardingStatus(ACCOUNT)).needed,false);
+  assert.equal((await onboarding.onboardingStatus(OTHER)).needed,true);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM memory_items WHERE account_id=?").get(ACCOUNT).n,5);
+  await onboarding.saveOnboarding(ACCOUNT,input);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM memory_items WHERE account_id=?").get(ACCOUNT).n,5);
+  await onboarding.saveOnboarding(OTHER,{skip:true});
+  assert.equal((await onboarding.onboardingStatus(OTHER)).needed,false);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM memory_items WHERE account_id=?").get(OTHER).n,0);
+ } finally {sqlite.close();}
+});
+test("disabled or edited onboarding memory stops prefilling structured preferences",()=>{
+ const {onboarding,sqlite}=fixture();
+ try {
+  const item={source:"onboarding",category:"pace",sourceId:"pace:gentle",scope:"global",version:1,enabled:true,expiresOn:null};
+  assert.equal(onboarding.onboardingDefaults([item]).paceLevel,"gentle");
+  assert.equal(onboarding.onboardingDefaults([{...item,enabled:false}]).paceLevel,undefined);
+  assert.equal(onboarding.onboardingDefaults([{...item,version:2}]).paceLevel,undefined);
+  assert.equal(onboarding.onboardingDefaults([{...item,sourceId:"pace:forged"}]).paceLevel,undefined);
+ } finally {sqlite.close();}
 });

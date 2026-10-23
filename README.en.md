@@ -6,23 +6,27 @@
 
 **Real places. Flexible plans. A little room to breathe.**
 
-[Try BioTrip](https://biotrip.ccwu.cc) · [简体中文](README.md) · [Integrations](docs/platform-access-checklist.md) · [Privacy](https://biotrip.ccwu.cc/privacy)
+[Website](https://biotrip.eazylee.si) · [Try BioTrip](https://biotrip.eazylee.si/app) · [Product film](https://biotrip.eazylee.si/#film) · [简体中文](README.md) · [Integrations](docs/platform-access-checklist.md) · [Privacy](https://biotrip.eazylee.si/privacy)
 
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)](docs/cloudflare-deployment.md)
 [![React 19](https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
 [![Bailian Managed Agents](https://img.shields.io/badge/Bailian-Managed_Agents-6155B4?style=flat-square)](docs/bailian-agent-setup.md)
 [![Amap MCP](https://img.shields.io/badge/Amap-MCP-478D64?style=flat-square)](docs/amap-mobility-setup.md)
-[![Tests](https://img.shields.io/badge/Local_tests-351_passed-478D64?style=flat-square)](#verification-and-release)
+[![Tests](https://img.shields.io/badge/Local_tests-486_passed-478D64?style=flat-square)](#verification-and-release)
 [![CI](https://img.shields.io/badge/GitHub_Actions-CI-24292F?style=flat-square&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 
 </div>
 
 ## Plan before departure. Adjust along the way.
 
-BioTrip is a mobile-first travel planning app built for the Fliggy hackathon. It turns travel preferences, current self-reports, time-zone changes and optional WHOOP signals into itinerary suggestions backed by real sources.
+BioTrip is a mobile-first travel planning app independently built by Eazy Lee. It turns travel preferences, current self-reports, time-zone changes and optional WHOOP signals into itinerary suggestions backed by real sources.
 
 Tired legs? Change a transfer. Need quiet? Make room for a break. Suggestions remain proposals until you select and apply them. Fixed appointments are protected, and previous itinerary versions can be restored.
+
+After an adjustment, record how it felt. Recent feedback within the same journey informs subsequent suggestions, connecting self-reports, itinerary changes and experience feedback. Long-term preferences are saved at the user's choice. The body dashboard supports WHOOP recovery, sleep, strain and steps; support for additional wearable data sources is planned.
+
+[Watch the 2-minute 37-second product film](https://biotrip.eazylee.si/#film). The website shows actual product interfaces and authorized historical WHOOP records. Changes in subjective fatigue scores illustrate a demonstration scenario.
 
 <table>
 <tr>
@@ -35,12 +39,13 @@ Tired legs? Change a transfer. Need quiet? Make room for a break. Suggestions re
 </tr>
 </table>
 
-## A journey in four steps
+## A journey in five steps
 
 1. **Choose a destination and dates**, then set your travel pace and preferences.
 2. **Confirm how your data will be used**, generate a plan and inspect its sources.
 3. **Share how you feel during the trip**. Local rules provide initial suggestions while advisers gather evidence in parallel.
 4. **Select the changes you want**, preview them and save a new version while retaining fixed appointments and the original plan.
+5. **Record how the adjustment felt** so recent feedback can inform the next suggestion.
 
 Generation failures report their actual cause rather than returning sample itineraries as real results. If adjustment advisers are unavailable, clearly labelled rule-based suggestions remain usable. BioTrip provides recommendations and source links; booking, payment and changes to third-party orders remain the user's responsibility.
 
@@ -98,11 +103,11 @@ Use Worker Secrets in production. `.dev.vars`, `.env.local`, local databases and
 
 ## Verification and release
 
-As of **2026-10-05**:
+As of **2026-10-23**:
 
-- **351 local tests passed**, along with TypeScript, targeted ESLint and a vinext production build. The badge records local verification; see [Actions](https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions) for GitHub CI results.
+- **486 local tests passed**, covering video byte ranges, background planning, itinerary constraints, assistant tools and feedback persistence. The badge records local verification; see [Actions](https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions) for GitHub CI results.
 - **Real Amap flow verified locally**: Session configuration → raw SSE → suggestion card → individual acceptance → D1 version persistence. One West Lake → Lingyin Temple query returned approximately 28 minutes by car and 5.5 km. This was a time-specific estimate and changes with traffic.
-- **Deployed** to [biotrip.ccwu.cc](https://biotrip.ccwu.cc), version `c0d6d885-ca1f-40cb-8084-a3930ef86553`. Production migrations are current, pages and assets load, and anonymous task endpoints require authentication.
+- **The product website and film are live** at [biotrip.eazylee.si](https://biotrip.eazylee.si), with the application at [/app](https://biotrip.eazylee.si/app), version `3d5561ef-876a-40e2-b921-b839951eb9ee`. All 35 production checks for the website release passed, including film availability and protected application endpoints. Film playback and chapter seeking were verified in the browser.
 - **Still to verify**: a real route consultation in production and physical-phone testing. The WHOOP app remains in Sandbox; available slots depend on the platform.
 
 See [deployment history](docs/cloudflare-deployment.md), [adjustment work log](docs/adjustment-continuation.md) and [mobile acceptance](docs/mobile-acceptance.md) for verification scope. Detailed engineering documents are currently in Chinese.
@@ -119,11 +124,11 @@ public/                     Fonts, ambience and destination assets
 bailian/                    FlyAI Skill and integration materials
 ```
 
-[Project status](docs/project-plan.md) · [Product work log](docs/zen-product-execution.md) · [Visual credits](https://biotrip.ccwu.cc/credits) · [Competition and data boundaries](docs/competition-rules-and-data.md)
+[Project status](docs/project-plan.md) · [Product work log](docs/zen-product-execution.md) · [Visual credits](https://biotrip.eazylee.si/credits) · [Competition and data boundaries](docs/competition-rules-and-data.md)
 
 ## Data and assets
 
-WHOOP tokens are encrypted per account; raw body metrics are not stored in the database. The Worker learns preferences from the user's own choices. Public sharing requires separate confirmation, excludes dates, full itineraries, health data and personal memory, and can be revoked. See the [privacy policy](https://biotrip.ccwu.cc/privacy) for the complete rules.
+WHOOP tokens are encrypted per account; raw body metrics are not stored in the database. The Worker learns preferences from the user's own choices. Public sharing requires separate confirmation, excludes dates, full itineraries, health data and personal memory, and can be revoked. See the [privacy policy](https://biotrip.eazylee.si/privacy) for the complete rules.
 
 Generated ambience and destination photography are labelled separately. Photo, font and third-party Skill licenses are recorded alongside their assets. No repository-wide open-source license has been declared.
 
@@ -131,6 +136,6 @@ Generated ambience and destination photography are labelled separately. Photo, f
 
 **Let your journey take care of you, today.**
 
-[Try BioTrip ↗](https://biotrip.ccwu.cc)
+[Try BioTrip ↗](https://biotrip.eazylee.si)
 
 </div>

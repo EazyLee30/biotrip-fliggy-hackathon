@@ -1,4 +1,5 @@
 import { bailianRequest, deleteBailianSession, type BailianConfig } from "@/lib/bailian";
+import { registerSessionCleanup, queueSessionCleanup } from "@/lib/bailian-session-cleanup";
 import { AgentStreamError, consumeAgentResponse, parseJsonText, parsePlan, safeHttpsUrl } from "@/lib/bailian-output";
 import { createToolEvidence, type FlyaiEvidenceCommand, type ToolEvidence } from "@/lib/bailian-evidence";
 import { composePlanPrompt, healthInsightPrompt, localResearchPrompt } from "../prompts";
@@ -6,7 +7,6 @@ import { bindPlanPlaces, flyaiInventory } from "./bailian-model";
 import { flyaiInventoryPrompt, skillInventoryQueries } from "../inventory";
 import { consumeInventoryStream } from "../inventory-stream";
 import { adjustmentPrompt, reliefQueries } from "../adjust-prompts";
-import { searchFlyai } from "@/lib/flyai";
 import { createMobilityEvidence, mobilityLegs, mobilityPrompt } from "../mobility";
 import type { RouteFact } from "../../adjust/validate";
 import { abstractHealth } from "../adjust-health";
@@ -147,6 +147,7 @@ export async function runAgentSession(
   mobilityEvidence?: ReturnType<typeof createMobilityEvidence>,
 ): Promise<AgentSessionResult> {
   let sessionId: string | null = null;
+  let cleanupRegistered = false;
   let operation = "session_create";
   const startedAt = Date.now();
   const controller = new AbortController();
@@ -184,6 +185,8 @@ export async function runAgentSession(
       throw new PlannerError(stage, operation, 502, "INVALID_SESSION_RESPONSE", null, degradable);
     }
     sessionId = created.id;
+    await registerSessionCleanup(sessionId);
+    cleanupRegistered = true;
     await sessionCreated?.(stage, sessionId);
     // Health interpretation and composition must have no tools, checked against the session
     // snapshot the provider actually created rather than a local assumption.
@@ -237,15 +240,22 @@ export async function runAgentSession(
         )
       : normalizePlannerError(stage, operation, error, degradable);
     log("failed", { status: failure.status, code: failure.code });
+    if (error && typeof error === "object" && "inventoryEvidence" in error) Object.assign(failure, { inventoryEvidence: error.inventoryEvidence });
     throw failure;
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", abort);
     controller.abort();
     if (sessionId) {
-      log("cleanup_started");
-      const cleanup = await deleteBailianSession(config, sessionId);
-      log(cleanup.confirmed ? "cleanup_completed" : "cleanup_failed", { status: cleanup.status });
+      if (cleanupRegistered) {
+        await queueSessionCleanup(sessionId).catch(() => undefined);
+        log("cleanup_queued");
+      } else {
+        // A storage outage happened before any prompt was sent. Do not orphan
+        // that newly-created session merely because the queue was unavailable.
+        const cleanup = await deleteBailianSession(config, sessionId);
+        log(cleanup.confirmed ? "cleanup_completed" : "cleanup_failed", { status: cleanup.status });
+      }
     }
   }
 }
@@ -367,6 +377,7 @@ export function createAgentProvider(config: BailianConfig): PlanningProvider {
           failedSearches: 0,
           failedCategories: [...new Set([...unsearchedCategories, ...result.evidence.emptyFlyaiCategories])],
           executor: "agent_skill",
+          receipts: result.evidence.queryReceipts,
         };
       } catch (error) {
         if (ctx.signal.aborted || error instanceof PlannerError && error.code === "CLIENT_DISCONNECTED") throw error;
@@ -378,36 +389,29 @@ export function createAgentProvider(config: BailianConfig): PlanningProvider {
           requestId: ctx.requestId,
           code: failure.code,
         });
-        const direct = await searchFlyaiFromWorker(ctx);
-        return { ...direct, executor: "worker", fallbackReason: failure.code };
+        return recoverInventory(ctx, error, failure.code);
       }
     },
 
     async reliefInventory(ctx) {
       const travel = target("travel");
-      const queries = reliefQueries(ctx);
-      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-      const commands = queries.map(query => ({ category: query.category,
-        command: `DEBUG_FLYAI_MCP_URL=https://biotrip.ccwu.cc/api/flyai/mcp flyai keyword-search --query ${quote(query.query)}` }));
+      const scoped = { ...ctx, searchIntents: ctx.searchIntents ?? reliefQueries(ctx).map(query => ({ kind: "keyword" as const, query: query.query })) };
+      const { commands } = skillInventoryQueries(scoped);
       let fallbackReason: string | undefined;
+      let originalError: unknown;
       if (travel?.vaultIds?.length) {
         try {
           const result = await runAgentSession(config, "relief_inventory", travel, flyaiInventoryPrompt(ctx, commands), 25_000, true,
             ctx.signal, ctx.requestId, ctx.progress, () => true, commands, ctx.sessionCreated);
           return { sources: result.evidence.flyaiSources, searches: result.evidence.successfulFlyaiSearches, failedSearches: 0,
-            failedCategories: result.evidence.emptyFlyaiCategories, executor: "agent_skill" };
+            failedCategories: result.evidence.emptyFlyaiCategories, receipts: result.evidence.queryReceipts, executor: "agent_skill" };
         } catch (error) {
           ctx.signal.throwIfAborted();
           fallbackReason = normalizePlannerError("relief_inventory", "agent_inventory", error).code;
+          originalError = error;
         }
       } else fallbackReason = "FLYAI_VAULT_NOT_CONFIGURED";
-      const results = await Promise.allSettled(queries.map(query => searchFlyai("fliggy_fast_search", { query: query.query }, ctx.signal, query.category)));
-      ctx.signal.throwIfAborted();
-      const sources = results.flatMap(result => result.status === "fulfilled" ? result.value.sources : []).slice(0, 24);
-      if (!sources.length) throw new PlannerError("relief_inventory", "search", 502, "NO_VERIFIED_FLYAI_SOURCE", null, true);
-      return { sources, searches: queries.length, failedSearches: results.filter(result => result.status === "rejected").length,
-        failedCategories: results.flatMap((result, index) => result.status === "rejected" || !result.value.sources.length ? [queries[index].category] : []),
-        executor: "worker", fallbackReason };
+      return recoverInventory(scoped, originalError, fallbackReason);
     },
 
     async composeAdjustments(ctx, gathered) {
@@ -449,8 +453,26 @@ export function createAgentProvider(config: BailianConfig): PlanningProvider {
 }
 
 /** Verified Worker searches when the Skill result cannot be accepted. */
-async function searchFlyaiFromWorker(ctx: StageContext): Promise<Omit<FlyaiInventory, "executor">> {
-  return flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate, ctx.inventoryAvailable);
+async function recoverInventory(ctx: StageContext, error: unknown, fallbackReason: string): Promise<FlyaiInventory> {
+  const partial = error && typeof error === "object" && "inventoryEvidence" in error ? error.inventoryEvidence as ToolEvidence : null;
+  const selection = skillInventoryQueries(ctx);
+  const completed = new Set((partial?.queryReceipts ?? []).filter(receipt => ["completed", "empty"].includes(receipt.state)).map(receipt => receipt.queryKey));
+  // An observed call without its output may already have reached the provider.
+  // Keep it unknown instead of issuing the same potentially billed query again.
+  const unknown = new Set((partial?.queryReceipts ?? []).filter(receipt => receipt.state === "unknown").map(receipt => receipt.queryKey));
+  const unknownCategories = selection.queries.filter(query => unknown.has(query.queryKey)).map(query => query.category);
+  const missing = selection.queries.filter(query => !completed.has(query.queryKey) && !unknown.has(query.queryKey));
+  // Cap application-observed attempts, including failed Skill calls. This
+  // cannot account for retries hidden inside the managed upstream runtime.
+  const remaining = missing.slice(0, Math.max(0, 4 - (partial?.flyaiSearchCalls ?? 0)));
+  const unsearched = [...unknownCategories, ...missing.slice(remaining.length).map(query => query.category)];
+  const direct = remaining.length ? await flyaiInventory(ctx.signal, ctx.input.trip!, ctx.timing.arrivalDate, ctx.inventoryAvailable,
+    { queries: remaining, unsearchedCategories: [...selection.unsearchedCategories, ...unsearched] }, true)
+    : { sources: [], searches: 0, failedSearches: missing.length, failedCategories: [...selection.unsearchedCategories, ...unsearched], receipts: [] };
+  const sources = [...new Map([...(partial?.flyaiSources ?? []), ...direct.sources].map(source => [source.id ?? source.url, source])).values()].slice(0, 30);
+  return { ...direct, sources, searches: (partial?.successfulFlyaiSearches ?? 0) + direct.searches,
+    failedCategories: [...new Set([...(partial?.emptyFlyaiCategories ?? []), ...direct.failedCategories])],
+    receipts: [...(partial?.queryReceipts ?? []), ...(direct.receipts ?? [])], executor: "worker", fallbackReason };
 }
 
 function fallbackBasis(ctx: StageContext): HealthBasis {

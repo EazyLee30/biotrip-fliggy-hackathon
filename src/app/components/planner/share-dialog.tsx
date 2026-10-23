@@ -1,5 +1,6 @@
 "use client";
 
+import { ToggleSwitch } from "../toggle-switch";
 import { useRef, useState } from "react";
 import type { Journey } from "@/lib/journey-types";
 import { DEFAULT_SHARE_OPTIONS, publicJourneySnapshot, type ShareOptions, type JourneyShareSnapshot } from "@/lib/journey-share";
@@ -63,7 +64,7 @@ export function ShareDialog({ journey, onClose, onCreated }: { journey: Journey;
         ["includePlaces", "公开检索到的当地体验与来源"], ["includeItinerary", "公开每日活动名称与时间"],
         ["includeSummary", "公开原始旅程摘要（请检查是否含个人感受）"], ["includeActivityDetails", "附带活动说明与地点"],
         ["includeExactDates", "附带具体出行日期"], ["includeFixed", "包含固定预约"],
-      ] as const).map(([key, label]) => <label className={styles.checkLabel} key={key}><input type="checkbox" checked={options[key]} disabled={busy || (["includeActivityDetails", "includeExactDates", "includeFixed"].includes(key) && !options.includeItinerary)} onChange={(event) => { setOptions((current) => ({ ...current, [key]: event.target.checked })); setConfirmed(false); }} /><span>{label}</span></label>)}</div> : null}
+      ] as const).map(([key, label]) => <label className={styles.checkLabel} key={key}><ToggleSwitch label={label} checked={options[key]} disabled={busy || (["includeActivityDetails", "includeExactDates", "includeFixed"].includes(key) && !options.includeItinerary)} onChange={(enabled) => { setOptions((current) => ({ ...current, [key]: enabled })); setConfirmed(false); }} /><span>{label}</span></label>)}</div> : null}
       {!path && stage === "select" && options.includePlaces ? <fieldset className={styles.shareSelection}><legend>挑选公开推荐</legend>{plan?.places.map(item => <label className={styles.checkLabel} key={item.url}><input type="checkbox" checked={options.selectedPlaceUrls === undefined || options.selectedPlaceUrls.includes(item.url)} onChange={event => setOptions(current => { const urls = current.selectedPlaceUrls ?? plan.places.map(place => place.url); return { ...current, selectedPlaceUrls: event.target.checked ? [...new Set([...urls, item.url])] : urls.filter(url => url !== item.url) }; })} /><span>{item.name}</span></label>)}</fieldset> : null}
       {!path && stage === "select" && journey.plan?.visuals?.cover.length ? <fieldset className={styles.stack}><legend>公开目的地图片 · 默认不公开，最多四张</legend>{journey.plan.visuals.cover.map(image => <label className={styles.checkLabel} key={image.url}><input type="checkbox" checked={options.selectedCoverUrls?.includes(image.url) ?? false} disabled={busy || (!options.selectedCoverUrls?.includes(image.url) && (options.selectedCoverUrls?.length ?? 0) >= 4)} onChange={event => setOptions(current => ({ ...current, selectedCoverUrls: event.target.checked ? [...(current.selectedCoverUrls ?? []), image.url] : (current.selectedCoverUrls ?? []).filter(url => url !== image.url) }))} /><span>{image.name} · {image.kind === "poi" ? "实景" : "商品图片"}</span></label>)}<small>图片随公开网页展示；下载海报仍使用所选手记封面。</small></fieldset> : null}
       {options.template === "postcard" && preview?.template === "journal" && !path ? <p className={styles.note}>当前内容较多，将使用分页行程手记，保留完整文字。减少至 3 项短推荐并关闭每日安排与摘要，可使用单页明信片。</p> : null}

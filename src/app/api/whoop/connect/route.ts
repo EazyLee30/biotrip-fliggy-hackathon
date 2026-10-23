@@ -15,12 +15,12 @@ export async function GET(request: Request) {
   const account = await getCurrentAccount().catch(() => null);
   if (!account) return NextResponse.redirect(new URL("/login?next=%2Fapi%2Fwhoop%2Fconnect", request.url));
   if (!whoopAppConfigured()) {
-    return NextResponse.redirect(new URL("/?whoop=failed", request.url));
+    return NextResponse.redirect(new URL("/app?whoop=failed", request.url));
   }
   // An existing connection is reused as-is. Re-authorising would be an
   // unnecessary interruption for a traveller who already said yes once.
   if (new URL(request.url).searchParams.get("reauthorize") !== "1" && await readWhoopTokens(account.id).catch(() => null)) {
-    return NextResponse.redirect(new URL("/?whoop=connected", request.url));
+    return NextResponse.redirect(new URL("/app?whoop=connected", request.url));
   }
 
   const config = getWhoopOAuthConfig();

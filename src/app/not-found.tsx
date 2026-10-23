@@ -9,7 +9,7 @@ export default function NotFoundPage() {
         <span className="status-symbol" aria-hidden="true">⌁</span>
         <h1>这条路还没有抵达</h1>
         <p>页面不存在，或分享链接已经失效。回到首页，继续你的下一段旅程。</p>
-        <Link className="status-primary" href="/">返回我的旅程</Link>
+        <Link className="status-primary" href="/app">返回我的旅程</Link>
       </section>
     </main>
   );

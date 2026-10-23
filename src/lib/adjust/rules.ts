@@ -1,6 +1,7 @@
 import type { ItineraryItem } from "../itinerary-edit";
 import type { JourneyTripDraft } from "../journey-types";
 import { feasible } from "./reflow";
+import { activityIsProtected } from "./protection";
 import type { BodyStatus } from "./status";
 import { clockOf, dayLoad, minutesOf, type ActivityLoad } from "./tags";
 import { GENERIC_STOP_COPY, type AdjustScope, type AdjustTemplate, type Proposal, type Signal, type Stance } from "./types";
@@ -39,7 +40,8 @@ const SLEEP: Signal[] = ["whoop_sleep", "self_tag", "jet_lag"];
 export function instantProposals(input: InstantInput): Proposal[] {
   const { itinerary, trip, scope, status, stance } = input;
   const needs = new Set(status.needs);
-  const today = dayLoad(itinerary, scope.date).filter((item) => item.time >= scope.fromTime);
+  const eligible=itinerary.filter(item=>!activityIsProtected(item,{date:scope.date,time:scope.fromTime}));
+  const today = dayLoad(eligible, scope.date).filter((item) => item.time >= scope.fromTime);
   const proposals: Proposal[] = [];
   const offer = (proposal: Proposal) => {
     if (proposals.length >= MAXIMUM || proposals.some((entry) => entry.id === proposal.id)) return;
@@ -110,7 +112,7 @@ export function instantProposals(input: InstantInput): Proposal[] {
     const last = [...today].reverse().find((item) => !item.fixed && ["sight", "experience", "other"].includes(item.kind));
     const tomorrow = nextDate(scope.date);
     if (last && tomorrow <= scope.throughDate) {
-      const ahead = dayLoad(itinerary, tomorrow);
+      const ahead = dayLoad(eligible, tomorrow);
       const end = ahead.length ? ahead[ahead.length - 1].endsAt : 9 * 60 + 30;
       const slot = !ahead.length || minutesOf(ahead[0].time) - (9 * 60 + 30) >= last.minutes ? 9 * 60 + 30 : Math.ceil(end / 30) * 30;
       offer({ id: `instant:postpone:${last.id}`, tier: "instant", angle: "pace",
@@ -140,12 +142,22 @@ export function instantProposals(input: InstantInput): Proposal[] {
   }
   if (needs.has("late_start")) {
     const tomorrow = nextDate(scope.date);
-    const first = tomorrow <= scope.throughDate ? dayLoad(itinerary, tomorrow)[0] : undefined;
+    const first = tomorrow <= scope.throughDate ? dayLoad(eligible, tomorrow)[0] : undefined;
     if (first && !first.fixed && minutesOf(first.time) < 9 * 60 + 30) offer({ id: `instant:morning:${first.id}`, tier: "instant", angle: "sleep",
       title: "明早晚一小时出发",
       reason: `明天第一项「${first.name}」顺延一小时，多睡一会儿；后面的灵活安排一起顺延。`,
       signals: signalsFor(status, ...SLEEP), effect: { restMinutes: 60, basis: "estimate" },
       templates: [{ type: "shift", activityId: first.id, minutes: 60 }] });
+  }
+
+  // Even when the only remaining item is the current reservation, a pause can
+  // start once its occupied interval ends. Reflow resolves that exact boundary.
+  if ((needs.has("rest") || low) && !proposals.some(proposal=>proposal.templates.length)) {
+    const length=low?45:30;
+    offer({id:`instant:rest:${scope.date}`,tier:"instant",angle:"pace",title:`下一段空档，先歇 ${length} 分钟`,
+      reason:"把已经开始的安排完整留住，在它结束后留一段休息时间。",signals:signalsFor(status,...BODY),
+      effect:{restMinutes:length,timeMinutes:length,basis:"estimate"},
+      templates:[{type:"add_stop",date:scope.date,time:scope.fromTime,durationMin:length,effort:1,...GENERIC_STOP_COPY.rest}]});
   }
 
   // A pause that changes nothing in the day.

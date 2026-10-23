@@ -92,7 +92,7 @@ async function sendCodeEmail(email: string, code: string, purpose: CodePurpose) 
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM_EMAIL || "BioTrip <login@notify.biotrip.ccwu.cc>",
+      from: process.env.RESEND_FROM_EMAIL || "BioTrip <login@notify.biotrip.eazylee.si>",
       to: [email],
       subject: `BioTrip ${action}验证码`,
       text: `你的 BioTrip ${action}验证码是 ${code}，10 分钟内有效。若这不是你的操作，请忽略此邮件。`,

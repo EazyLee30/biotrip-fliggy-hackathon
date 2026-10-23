@@ -122,7 +122,7 @@
 
 不通过的后果：**线上无法注册，评委进不来。**
 
-**待办**：`pnpm exec wrangler secret list` 确认；Resend 控制台确认 `notify.biotrip.ccwu.cc` 的 DNS 验证状态；实测发一封验证码并检查收件箱与 Resend 投递日志。
+**待办**：`pnpm exec wrangler secret list` 确认；Resend 控制台确认 `notify.biotrip.eazylee.si` 的 DNS 验证状态；实测发一封验证码并检查收件箱与 Resend 投递日志。
 
 ### 3.4 本轮两次真实端到端规划
 

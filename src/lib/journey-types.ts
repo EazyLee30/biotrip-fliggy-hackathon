@@ -76,6 +76,24 @@ export type ActivityMove = { mode: MoveMode; minutes?: number; km?: number; cost
 export type ItineraryActivity = {
   id?: string; sourceUrl?: string; date?: string; time: string; name: string; detail: string; fixed: boolean;
   kind?: ActivityKind; effort?: ActivityEffort; durationMin?: number; move?: ActivityMove;
+  /** Explicit traveller progress; a planned clock time alone is not proof of completion. */
+  progress?: { state: ActivityState; updatedAt: string };
+};
+export type ActivityState = "planned" | "in_progress" | "completed" | "skipped";
+export type BodyCheckIn = {
+  id: string; journeyId: string; localDate: string; timezone: string; recordedAt: string;
+  fatigue: number | null; stress: number | null; tags: import("./adjust/types").CheckInTag[];
+  source: "self_report" | "adjustment_outcome";
+};
+export type AdjustmentOutcome = {
+  id: string; adjustmentId: string; journeyId: string; recordedAt: string; localDate: string;
+  feeling: "lighter" | "same" | "still_tired"; fatigue: number | null; stress: number | null; note: string;
+};
+export type AdjustmentRecord = {
+  id: string; journeyId: string; jobId: string; appliedAt: string; localDate: string;
+  beforeVersion: number; afterVersion: number; fatigueBefore: number | null;
+  changes: Array<{ id: string; title: string; angle: import("./adjust/types").Angle; templates: import("./adjust/types").AdjustTemplate[] }>;
+  outcome: AdjustmentOutcome | null;
 };
 
 /** Real photographs bound server-side from the same FlyAI record as their link; never model output. */
@@ -102,7 +120,8 @@ export type JourneyGeneratedPlan = {
   visuals?: JourneyVisuals;
   provenance?: JourneyProvenance;
   /** Manual changes retain the original generation provenance and retrieval time. */
-  manualAdjustment?: { updatedAt: string; revision: number; operationCount: number };
+  bodyAdjustment?: { id?: string; updatedAt: string; fatigueBefore: number | null; changes: string[] };
+  manualAdjustment?: { id?: string; updatedAt: string; revision: number; operationCount: number };
 };
 
 export type Journey = {
@@ -121,6 +140,7 @@ export type Journey = {
 };
 
 export type JourneyFeedbackInput = {
+  adjustmentAt?: string;
   bodyFeedback?: string;
   moodFeedback?: string;
   fatigue?: number | null;

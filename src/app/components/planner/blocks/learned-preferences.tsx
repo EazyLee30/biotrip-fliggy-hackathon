@@ -19,12 +19,13 @@ const KIND_LABELS: Record<PreferenceKind, string> = {
   tone: "个人色调",
   service: "常用服务",
   food: "饮食习惯",
-  destination: "去过的城市",
+  destination: "旅行目的地",
+  home: "常住城市",
   schedule: "节奏习惯",
 };
 
 const KIND_ORDER: PreferenceKind[] = [
-  "rhythm", "pace", "guardrail", "intention", "ambience", "tone", "service", "food", "destination", "schedule",
+  "rhythm", "pace", "guardrail", "intention", "ambience", "tone", "service", "food", "destination", "home", "schedule",
 ];
 
 const SOURCE_LABELS = { choice: "来自你的选择", feedback: "来自你的反馈", profile: "来自你的档案" } as const;
