@@ -14,8 +14,8 @@ test('a real destination photo never becomes another destination or product illu
 
 test('shipped destination derivatives and archived source match their recorded fingerprints', () => {
   for(const photo of DESTINATION_PHOTOS) {
-    const record=JSON.parse(readFileSync(new URL(`../../docs/design-exploration/licenses/${photo.id}.json`,import.meta.url),'utf8'));
-    const original=readFileSync(new URL(`../../docs/design-exploration/licenses/${photo.id}-original.jpg`,import.meta.url));
+    const record=JSON.parse(readFileSync(new URL(`../../docs/assets/licenses/${photo.id}.json`,import.meta.url),'utf8'));
+    const original=readFileSync(new URL(`../../docs/assets/licenses/${photo.id}-original.jpg`,import.meta.url));
     assert.equal(createHash('sha1').update(original).digest('hex'),record.expectedCommonsSha1);
     for(const derivative of record.derivatives) {
       const bytes=readFileSync(new URL(`../../public${derivative.path}`,import.meta.url));

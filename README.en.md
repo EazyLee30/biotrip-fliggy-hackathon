@@ -1,141 +1,155 @@
-<div align="center">
+<p align="center">
+  <a href="https://biotrip.eazylee.si">
+    <img src="public/brand/readme-banner.webp" alt="BioTrip — Travel at your own rhythm." width="100%" />
+  </a>
+</p>
 
-<img src="public/brand/readme-banner.svg" alt="BioTrip — Travel at your own rhythm" width="100%" />
+<p align="center"><strong>An AI travel companion that listens to how you feel.</strong></p>
 
-# BioTrip · Travel at your own rhythm
+<p align="center">
+  <a href="https://biotrip.eazylee.si/app"><strong>Start a journey ↗</strong></a> &nbsp; · &nbsp;
+  <a href="https://biotrip.eazylee.si/#film">Watch the film · 02:37</a> &nbsp; · &nbsp;
+  <a href="https://biotrip.eazylee.si">Website</a> &nbsp; · &nbsp;
+  <a href="README.md">简体中文</a>
+</p>
 
-**Real places. Flexible plans. A little room to breathe.**
+<p align="center">
+  <a href="https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions/workflows/ci.yml"><img src="https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+  <a href="docs/verification.md"><img src="https://img.shields.io/badge/tests-486_passed-2b6a57?style=flat" alt="486 tests passed" /></a>
+  <img src="https://img.shields.io/badge/WHOOP-connected-849c7a?style=flat" alt="WHOOP integration" />
+</p>
 
-[Website](https://biotrip.eazylee.si) · [Try BioTrip](https://biotrip.eazylee.si/app) · [Product film](https://biotrip.eazylee.si/#film) · [简体中文](README.md) · [Integrations](docs/platform-access-checklist.md) · [Privacy](https://biotrip.eazylee.si/privacy)
+<br />
 
-[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)](docs/cloudflare-deployment.md)
-[![React 19](https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white)](package.json)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
-[![Bailian Managed Agents](https://img.shields.io/badge/Bailian-Managed_Agents-6155B4?style=flat-square)](docs/bailian-agent-setup.md)
-[![Amap MCP](https://img.shields.io/badge/Amap-MCP-478D64?style=flat-square)](docs/amap-mobility-setup.md)
-[![Tests](https://img.shields.io/badge/Local_tests-486_passed-478D64?style=flat-square)](#verification-and-release)
-[![CI](https://img.shields.io/badge/GitHub_Actions-CI-24292F?style=flat-square&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
+## Your plans should listen to you, too
 
-</div>
+A short night of sleep. Tired legs by afternoon. A teahouse worth staying in a little longer. How you feel changes throughout a journey. Your plans should have room to change with you.
 
-## Plan before departure. Adjust along the way.
+BioTrip brings travel preferences, current self-reports and authorized WHOOP records into planning. Walk less, make time for a break or adjust the pace. Preview each change before accepting it, with fixed appointments and completed activities protected.
 
-BioTrip is a mobile-first travel planning app independently built by Eazy Lee. It turns travel preferences, current self-reports, time-zone changes and optional WHOOP signals into itinerary suggestions backed by real sources.
+## From how you feel to a better next step
 
-Tired legs? Change a transfer. Need quiet? Make room for a break. Suggestions remain proposals until you select and apply them. Fixed appointments are protected, and previous itinerary versions can be restored.
+<p align="center">
+  <img src="public/landing/today.webp" width="30%" alt="Today's itinerary and a check-in for how you feel" /> &nbsp;
+  <img src="public/landing/whoop-dashboard.webp" width="30%" alt="WHOOP dashboard: recovery, sleep, strain and steps" /> &nbsp;
+  <img src="public/landing/adjust-outcome.webp" width="30%" alt="Accepted changes and feedback after an adjustment" />
+</p>
 
-After an adjustment, record how it felt. Recent feedback within the same journey informs subsequent suggestions, connecting self-reports, itinerary changes and experience feedback. Long-term preferences are saved at the user's choice. The body dashboard supports WHOOP recovery, sleep, strain and steps; support for additional wearable data sources is planned.
+<p align="center"><sub>Your day &nbsp; / &nbsp; Body records &nbsp; / &nbsp; Changes and feedback</sub></p>
 
-[Watch the 2-minute 37-second product film](https://biotrip.eazylee.si/#film). The website shows actual product interfaces and authorized historical WHOOP records. Changes in subjective fatigue scores illustrate a demonstration scenario.
+| 01 · Check in | 02 · Adjust | 03 · Reflect | 04 · Refine |
+| :--- | :--- | :--- | :--- |
+| Record how you feel | Preview and accept changes | Tell BioTrip how it felt | Let recent feedback inform the next suggestion |
 
-<table>
-<tr>
-<td width="50%"><strong>🧭 Start with real sources</strong><br />Fliggy products and local public information are shown separately. Product images and links come from verified retrieval results.</td>
-<td width="50%"><strong>🌿 Follow today's rhythm</strong><br />Preferences and self-reports work on their own. WHOOP is optional and requires separate consent for each use.</td>
-</tr>
-<tr>
-<td><strong>🚕 Walk a little less</strong><br />An independent Amap adviser checks routes between adjacent places, showing returned travel times, distances and optional fares.</td>
-<td><strong>📖 Keep your choices</strong><br />Background tasks expose progress, drafts follow your account, and selected adjustments are saved as restorable versions.</td>
-</tr>
-</table>
+Recent feedback within a journey shapes subsequent suggestions. One tired afternoon stays a moment in time; long-term preferences are saved at your choice.
 
-## A journey in five steps
+WHOOP recovery, sleep, strain and steps are supported. Self-reports let you use the core experience without a device. **Support for additional wearable data sources is planned.**
 
-1. **Choose a destination and dates**, then set your travel pace and preferences.
-2. **Confirm how your data will be used**, generate a plan and inspect its sources.
-3. **Share how you feel during the trip**. Local rules provide initial suggestions while advisers gather evidence in parallel.
-4. **Select the changes you want**, preview them and save a new version while retaining fixed appointments and the original plan.
-5. **Record how the adjustment felt** so recent feedback can inform the next suggestion.
+<sub>Actual product interfaces. WHOOP readings are authorized historical records. The Hangzhou journey and subjective fatigue changes illustrate a demonstration scenario.</sub>
 
-Generation failures report their actual cause rather than returning sample itineraries as real results. If adjustment advisers are unavailable, clearly labelled rule-based suggestions remain usable. BioTrip provides recommendations and source links; booking, payment and changes to third-party orders remain the user's responsibility.
+## With you along the way
 
-## Advisers with clear boundaries
+| Capability | How it helps |
+| :--- | :--- |
+| **A plan of your own** | Daily itineraries based on your destination, dates and preferences, with manual editing and version history. |
+| **Discoveries with sources** | Fliggy travel services, local information and Amap routes retain their provenance. Unverified information is not presented as fact. |
+| **A companion to talk to** | Look up plans, manage lists and propose adjustments. Itinerary changes need your confirmation. |
+| **A pace it can remember** | Manage daily, journey and long-term memories. Edit, disable or undo saved preferences. |
+| **Moments worth keeping** | Collect places and share a travel journal with control over what becomes public. |
+
+[See a journey shaped around how you feel — watch the 02:37 film →](https://biotrip.eazylee.si/#film)
+
+## Built for real journeys
+
+**React 19 · TypeScript · Next.js / vinext · Cloudflare Workers · D1 · Workflows**
+
+Alibaba Cloud Bailian powers planning and conversation. FlyAI retrieves travel services, Amap checks routes, and WHOOP supplies optional body records. The server enforces consent, source validation, itinerary constraints and version checks.
+
+<details>
+<summary><strong>Explore the architecture and data boundaries</strong></summary>
 
 ```mermaid
 flowchart LR
-    U[Preferences and consent] --> W[Worker · Data grants and tasks]
-    W --> H[Body rhythm interpretation]
-    W --> F[Fliggy inventory / Comfort services]
-    W --> L[Local public information]
-    W --> M[Amap mobility · Adjustments]
-    H --> C[Tool-free composition]
-    F --> C
-    L --> C
-    M --> C
-    C --> P[Source and itinerary validation]
-    P --> A[Preview and confirmation]
-    A --> D[(D1 · Journeys and versions)]
+    I[Preferences and consent] --> H[Body rhythm interpretation]
+    I --> T[Travel and route research]
+    H --> C[Itinerary composition]
+    T --> C
+    C --> V[Source and constraint validation]
+    V --> U[Preview and confirmation]
+    U --> J[Save the journey]
+    J --> F[Record experience feedback]
+    F --> I
 ```
 
-| Adviser | Inputs and responsibility | Boundary |
-| :--- | :--- | :--- |
-| Body rhythm | Self-reports and WHOOP records explicitly permitted for this run | No tools, Skills, MCP or travel Vault |
-| Fliggy inventory / Comfort services | Travel search parameters and real product sources | Travel credentials are attached only to controlled inventory sessions |
-| Local information | City and permitted travel preferences or other search parameters | Public information stays separate from Fliggy products |
-| Amap mobility | City and names of adjacent public places | Independent Agent; five read-only tools; no current GPS access |
-| Composition | Abstract body rhythm, verified sources and permitted memory | Tool-free session; no repeated search or raw WHOOP records |
+- Raw body records enter a dedicated interpretation stage. Travel searches use public travel conditions.
+- Inventory, local research, route checks and composition have separate responsibilities and permissions.
+- Missing prices, route figures and links stay unknown. Empty search results are reported clearly.
+- Itinerary changes require confirmation and another server-side ownership, version and constraint check.
 
-`DataGrant` restricts stage inputs. Restricted Agents' actual Session configuration is checked before data is sent. Amap figures are extracted from paired raw tool events; model summaries cannot serve as route evidence. See [Bailian setup](docs/bailian-agent-setup.md) and [Amap setup](docs/amap-mobility-setup.md).
+See [architecture](docs/architecture.md).
+
+</details>
 
 ## Run locally
 
-Requires **Node.js 22+**, **pnpm 10**, and Bailian / FlyAI credentials for real planning.
+Requires **Node.js 22+** and **pnpm 10**. Real planning needs Bailian and FlyAI configuration; email sign-in requires an email provider. WHOOP is optional.
 
 ```bash
 pnpm install --frozen-lockfile
 cp .env.example .dev.vars
-# Fill in local configuration and credentials following the setup guides
+# Fill in local variables following the integration guides
 pnpm exec wrangler d1 migrations apply biotrip-users --local
 pnpm dev:vinext
 ```
 
-Open [localhost:3001](http://localhost:3001). Production uses **vinext + Cloudflare Workers**. Next.js development scripts remain available; use the path above when verifying Worker bindings and background tasks.
+Open [localhost:3001](http://localhost:3001), then `/app`. For your own deployment, replace the domain, database and service identifiers in `wrangler.jsonc` with your configuration.
 
-| Integration | Configuration |
+| Guide | Contents |
 | :--- | :--- |
-| Bailian | Standard API key, workspace, Agent and environment IDs; [setup](docs/bailian-agent-setup.md) |
-| FlyAI | Official API key, signing configuration and controlled travel Vault; [integrations](docs/platform-access-checklist.md) |
-| Amap | Web Service key stored only in Bailian's private official MCP configuration; separate Agent / environment IDs in the app |
-| Email sign-in | Account encryption settings and Resend; [email setup](docs/email-auth-setup.md) |
-| WHOOP (optional) | Dedicated Developer App, exact callback URL and server-side encryption secrets |
+| [Integrations](docs/platform-access-checklist.md) | Bailian, FlyAI, WHOOP and account configuration |
+| [Deployment](docs/cloudflare-deployment.md) | Worker, D1 migrations and production configuration |
+| [Bailian](docs/bailian-agent-setup.md) | Planning providers, Agents and permissions |
+| [Amap](docs/amap-mobility-setup.md) | Independent route adviser and route evidence |
+| [Email sign-in](docs/email-auth-setup.md) | Sending domains and login emails |
+| [Verification](docs/verification.md) | Check commands, coverage and known limitations |
 
-Use Worker Secrets in production. `.dev.vars`, `.env.local`, local databases and verification output are excluded from Git. Keep secrets out of frontend code, screenshots, command arguments and chat.
-
-## Verification and release
-
-As of **2026-10-23**:
-
-- **486 local tests passed**, covering video byte ranges, background planning, itinerary constraints, assistant tools and feedback persistence. The badge records local verification; see [Actions](https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions) for GitHub CI results.
-- **Real Amap flow verified locally**: Session configuration → raw SSE → suggestion card → individual acceptance → D1 version persistence. One West Lake → Lingyin Temple query returned approximately 28 minutes by car and 5.5 km. This was a time-specific estimate and changes with traffic.
-- **The product website and film are live** at [biotrip.eazylee.si](https://biotrip.eazylee.si), with the application at [/app](https://biotrip.eazylee.si/app), version `3d5561ef-876a-40e2-b921-b839951eb9ee`. All 35 production checks for the website release passed, including film availability and protected application endpoints. Film playback and chapter seeking were verified in the browser.
-- **Still to verify**: a real route consultation in production and physical-phone testing. The WHOOP app remains in Sandbox; available slots depend on the platform.
-
-See [deployment history](docs/cloudflare-deployment.md), [adjustment work log](docs/adjustment-continuation.md) and [mobile acceptance](docs/mobile-acceptance.md) for verification scope. Detailed engineering documents are currently in Chinese.
-
-## Repository map
+<details>
+<summary><strong>Repository structure and verification commands</strong></summary>
 
 ```text
-src/app/                    Pages, APIs and mobile-first interaction
-src/lib/planning/           Data grants, advisers, evidence and tasks
-src/lib/adjust/             Rules, conflict checks and itinerary reflow
-src/workers/                Worker entry and persistent Workflow
-migrations/                 D1 database migrations
-public/                     Fonts, ambience and destination assets
-bailian/                    FlyAI Skill and integration materials
+src/app/             Product pages, APIs and mobile interaction
+src/lib/             Planning, assistant, feedback and source validation
+src/workers/         Worker entry and background Workflow
+migrations/          D1 database migrations
+public/              Application assets, website and product film
+bailian/             FlyAI Skill and configuration references
+docs/                Setup guides, architecture and asset licenses
 ```
 
-[Project status](docs/project-plan.md) · [Product work log](docs/zen-product-execution.md) · [Visual credits](https://biotrip.eazylee.si/credits) · [Competition and data boundaries](docs/competition-rules-and-data.md)
+```bash
+pnpm exec tsc --noEmit
+pnpm test
+pnpm lint
+pnpm run build:vinext
+```
+
+As of October 23, 2026, all 486 tests and CI checks passed, as did 35 production checks for the website release. Browser mobile emulation and physical-device testing are recorded separately. See the verification guide for scope. Engineering documentation is in Chinese.
+
+</details>
 
 ## Data and assets
 
-WHOOP tokens are encrypted per account; raw body metrics are not stored in the database. The Worker learns preferences from the user's own choices. Public sharing requires separate confirmation, excludes dates, full itineraries, health data and personal memory, and can be revoked. See the [privacy policy](https://biotrip.eazylee.si/privacy) for the complete rules.
+WHOOP authorization records are encrypted per account. Public sharing excludes health data and personal memories. Production secrets remain on the server. Local credentials, databases, design drafts, development screenshots and video production projects are excluded from the repository.
 
-Generated ambience and destination photography are labelled separately. Photo, font and third-party Skill licenses are recorded alongside their assets. No repository-wide open-source license has been declared.
+[Privacy](https://biotrip.eazylee.si/privacy) · [Visual credits](https://biotrip.eazylee.si/credits) · [Asset licenses](docs/assets/README.md)
 
-<div align="center">
+The source is public; no repository-wide open-source license has been declared. Third-party assets and Skills retain their respective licenses.
 
-**Let your journey take care of you, today.**
+<br />
 
-[Try BioTrip ↗](https://biotrip.eazylee.si)
-
-</div>
+<p align="center">
+  <img src="public/biotrip-icon.svg" width="36" alt="BioTrip icon" /><br />
+  <sub>Independently built by <a href="https://github.com/EazyLee30">Eazy Lee</a></sub><br /><br />
+  <strong>The world is wide. Travel at your own rhythm.</strong><br />
+  <a href="https://biotrip.eazylee.si/app">Set off with BioTrip ↗</a>
+</p>

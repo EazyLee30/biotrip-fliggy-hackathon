@@ -167,11 +167,11 @@
       ],
       "archivedEvidence": [
         {
-          "path": "docs/design-exploration/licenses/hangzhou-broken-bridge-source.html",
+          "path": "docs/assets/licenses/hangzhou-broken-bridge-source.html",
           "sha256": "d47115b1c77c2316c47756624ce733c09afe8bd92a0d93503a9296abf9bc1d28"
         },
         {
-          "path": "docs/design-exploration/licenses/cc0-1.0-legalcode.html",
+          "path": "docs/assets/licenses/cc0-1.0-legalcode.html",
           "sha256": "b43732f4c1463b087cf10d4daf8d8766514b2bf8f21bc5ef50905f95be227726"
         }
       ]

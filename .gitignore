@@ -18,3 +18,25 @@ uploads/
 .wrangler/
 .playwright-cli/
 output/
+
+# Local design drafts and development records
+/stitch_biotrip_terminal/
+/docs/design-exploration/
+/docs/圆周旅迹-逆向素材/
+/圆周旅迹-逆向与UX-UI分析报告.md
+/public/zen/
+/public/brand/readme-banner.svg
+/docs/adjustment-continuation.md
+/docs/agent-execution.md
+/docs/body-adjustment-upgrade.md
+/docs/competition-rules-and-data.md
+/docs/flyai-search-upgrade.md
+/docs/full-chain-acceptance.md
+/docs/improvement-plan.md
+/docs/market-and-differentiation.md
+/docs/mobile-acceptance.md
+/docs/mobile-design-system.md
+/docs/product-landing-page.md
+/docs/project-plan.md
+/docs/solution-selection.md
+/docs/zen-product-execution.md

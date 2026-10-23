@@ -1,145 +1,157 @@
-<div align="center">
+<p align="center">
+  <a href="https://biotrip.eazylee.si">
+    <img src="public/brand/readme-banner.webp" alt="BioTrip — 让旅途，照顾好今天的你。" width="100%" />
+  </a>
+</p>
 
-<img src="public/brand/readme-banner.svg" alt="BioTrip · 让行程适合今天的你" width="100%" />
+<p align="center">
+  <strong>一个听见身体感受，也陪你看世界的 AI 旅行伙伴。</strong>
+</p>
 
-# BioTrip · 让行程适合今天的你
+<p align="center">
+  <a href="https://biotrip.eazylee.si/app"><strong>开启旅程 ↗</strong></a> &nbsp; · &nbsp;
+  <a href="https://biotrip.eazylee.si/#film">观看影片 · 02:37</a> &nbsp; · &nbsp;
+  <a href="https://biotrip.eazylee.si">产品官网</a> &nbsp; · &nbsp;
+  <a href="README.en.md">English</a>
+</p>
 
-**真实的目的地，灵活的安排，留一点空间给自己。**
+<p align="center">
+  <a href="https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions/workflows/ci.yml"><img src="https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+  <a href="docs/verification.md"><img src="https://img.shields.io/badge/tests-486_passed-2b6a57?style=flat" alt="486 项测试通过" /></a>
+  <img src="https://img.shields.io/badge/WHOOP-connected-849c7a?style=flat" alt="已接入 WHOOP" />
+</p>
 
-[产品官网](https://biotrip.eazylee.si) · [在线体验](https://biotrip.eazylee.si/app) · [产品影片](https://biotrip.eazylee.si/#film) · [English](README.en.md) · [接入说明](docs/platform-access-checklist.md) · [隐私说明](https://biotrip.eazylee.si/privacy)
+<br />
 
-[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)](docs/cloudflare-deployment.md)
-[![React 19](https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white)](package.json)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
-[![百炼 Managed Agents](https://img.shields.io/badge/百炼-Managed_Agents-6155B4?style=flat-square)](docs/bailian-agent-setup.md)
-[![高德 MCP](https://img.shields.io/badge/高德-MCP-478D64?style=flat-square)](docs/amap-mobility-setup.md)
-[![Tests](https://img.shields.io/badge/本地测试-486_通过-478D64?style=flat-square)](#验证与发布状态)
-[![CI](https://img.shields.io/badge/GitHub_Actions-CI-24292F?style=flat-square&logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
+## 旅行计划，也应该听见你的感受
 
-</div>
+昨晚没睡好，走到下午有些累，或是想在喜欢的茶馆多坐一会儿。旅途中的状态一直在变，行程也应该留有余地。
 
-## 出发之前计划，旅途中调整
+BioTrip 将旅行偏好、当下自评和经授权的 WHOOP 记录带进规划，帮助你减少步行、增加休息、调整活动密度。看清变化，再决定采用；重要预约和已经完成的安排受到保护。
 
-BioTrip 是由 Eazy Lee 独立构建的手机优先旅行规划应用。它将旅行偏好、当下自评、时区变化和可选的 WHOOP 身体信号，转化为有真实来源、可以逐条选择的行程建议。
+## 从感受出发，让下一步更适合你
 
-腿脚累了，换一段交通；想安静，给自己加一点休息。调整先提出建议，由你决定采纳哪些，固定预约受到保护，原安排可以从版本历史恢复。
+<p align="center">
+  <img src="public/landing/today.webp" width="30%" alt="今日行程：查看下一站，记录当下感受" /> &nbsp;
+  <img src="public/landing/whoop-dashboard.webp" width="30%" alt="WHOOP 数据看板：恢复、睡眠、活动负荷与步数" /> &nbsp;
+  <img src="public/landing/adjust-outcome.webp" width="30%" alt="调整结果：预留休息时间，并记录调整后的感受" />
+</p>
 
-调整后再次记录感受，让同一旅程内的近期反馈参与后续建议，形成“记录感受 → 调整旅程 → 体验反馈 → 优化后续建议”的闭环。长期偏好由用户选择记住。身体数据看板已支持 WHOOP 的恢复、睡眠、活动负荷和步数；更多可穿戴设备的数据源将在后续接入。
+<p align="center"><sub>今日行程 &nbsp; / &nbsp; 身体记录 &nbsp; / &nbsp; 调整与反馈</sub></p>
 
-[观看 2 分 37 秒产品影片](https://biotrip.eazylee.si/#film)。官网包含真实产品界面与经本人授权的 WHOOP 历史记录，影片中的主观疲劳变化为演示情境。
+| 01 · 记录感受 | 02 · 调整旅程 | 03 · 体验反馈 | 04 · 优化建议 |
+| :--- | :--- | :--- | :--- |
+| 告诉 BioTrip 此刻的状态 | 预览变化，确认后采用 | 记录是否轻松了一些 | 近期反馈参与下一次建议 |
 
-<table>
-<tr>
-<td width="50%"><strong>🧭 从真实来源开始</strong><br />飞猪旅行服务与当地公开资料分别展示，商品图片与链接来自核验后的检索结果。</td>
-<td width="50%"><strong>🌿 跟随今天的状态</strong><br />偏好与自评即可使用；WHOOP 是可选输入，每次使用前单独确认。</td>
-</tr>
-<tr>
-<td><strong>🚕 少走一段路</strong><br />高德独立出行顾问核验相邻地点的路线，展示实际返回的时长、距离和可选车费。</td>
-<td><strong>📖 保留你的选择</strong><br />后台任务可持续读取进度，草稿随账号保存，调整逐条采纳，历史版本可恢复。</td>
-</tr>
-</table>
+这是一条持续的反馈闭环。一次疲劳只代表当下，长期偏好由你选择记住。
 
-## 用对话安排，也能随时手动修改
+WHOOP 已支持恢复、睡眠、活动负荷和步数；没有设备，也能通过自评使用核心功能。**后续将支持更多可穿戴设备的数据源。**
 
-底部「聊聊旅程」可打开对话抽屉并展开全屏，指定旅程后创建、调整或恢复安排；每项变更先预览再确认。长期偏好可从新对话自动提取，旅程约束和当天状态有独立范围与有效期，记忆可查看、编辑、停用或撤销。实现与验收状态见 [对话助手执行记录](docs/agent-execution.md)。
+<sub>以上为实际产品界面。WHOOP 展示本人授权的历史记录；杭州旅程与疲劳评分变化用于演示操作流程。</sub>
 
-## 一段旅程如何发生
+## 一路相伴的能力
 
-1. **选好目的地与日期**，告诉 BioTrip 你的旅行节奏和偏好。
-2. **确认本次数据用途**，生成行程并查看真实商品与资料来源。
-3. **旅行中反馈感受**，基础建议先就绪，顾问并行核验补充信息。
-4. **选择想采纳的建议**，预览后保存新版本；保留固定安排与原版本。
-5. **体验后再记录感受**，让近期反馈参与下一次建议。
+| 能力 | 在旅途中如何帮助你 |
+| :--- | :--- |
+| **属于你的行程** | 根据目的地、日期与偏好安排每天的活动，支持手动编辑和版本回看。 |
+| **有出处的发现** | 飞猪旅行服务、公开当地资料和高德路线各有来源，缺少依据的信息不作为已验证结果。 |
+| **随时聊聊的伙伴** | 查询安排、整理清单、提出调整建议，行程变更先预览、再确认。 |
+| **记住喜欢的节奏** | 管理旅程、当天与长期记忆；近期反馈参与建议，长期偏好可编辑、停用或撤销。 |
+| **留下旅行片刻** | 收藏想去的地方，分享旅行手记，公开分享范围由你确认。 |
 
-生成失败会展示实际原因，不用示例行程冒充真实结果。调整顾问不可用时，仍可使用明确标注的基础建议。BioTrip 提供建议与来源链接，预订、付款和第三方订单修改由用户自行完成。
+[用 2 分 37 秒，走进一次从身体感受出发的旅行 →](https://biotrip.eazylee.si/#film)
 
-## 分工清楚的顾问
+## 为真实旅行而构建
+
+**React 19 · TypeScript · Next.js / vinext · Cloudflare Workers · D1 · Workflows**
+
+阿里云百炼负责规划与随行对话，FlyAI 提供旅行服务检索，高德核验路线，WHOOP 提供可选的身体数据。用户授权、来源核验、日程约束和版本校验由服务端执行。
+
+<details>
+<summary><strong>查看系统分工与数据边界</strong></summary>
 
 ```mermaid
 flowchart LR
-    U[旅行偏好与本次授权] --> W[Worker · 数据授权与任务管理]
-    W --> H[身体节奏解读]
-    W --> F[飞猪库存 / 舒缓货架]
-    W --> L[当地资料检索]
-    W --> M[高德出行顾问 · 调整阶段]
-    H --> C[无工具建议编排]
-    F --> C
-    L --> C
-    M --> C
-    C --> P[来源核验 · 行程校验]
-    P --> A[预览与确认]
-    A --> D[(D1 · 旅程与版本)]
+    I[偏好与本次授权] --> H[身体节奏解读]
+    I --> T[旅行信息与路线检索]
+    H --> C[行程编排]
+    T --> C
+    C --> V[来源与约束校验]
+    V --> U[预览并确认]
+    U --> J[保存旅程]
+    J --> F[记录体验反馈]
+    F --> I
 ```
 
-| 顾问 | 输入与职责 | 边界 |
-| :--- | :--- | :--- |
-| 身体节奏 | 自评，以及本次获准使用的 WHOOP 记录 | 无工具、Skill、MCP 或旅行 Vault |
-| 飞猪库存 / 舒缓货架 | 旅行搜索参数、真实商品来源 | 旅行凭据只挂载到受控库存会话 |
-| 当地资料 | 城市与获准的旅行偏好等检索参数 | 公开资料与飞猪商品分开展示 |
-| 高德出行 | 城市与相邻公开地点名 | 独立 Agent；只启用五个只读工具，不获取当前 GPS |
-| 建议编排 | 抽象身体节奏、核验后的来源与获准记忆 | 无工具会话；不重复搜索，不接收 WHOOP 原始记录 |
+- 身体原始记录仅进入专用解读环节，旅行检索使用公共旅行条件。
+- 库存、当地资料、高德出行和编排各有独立职责与权限。
+- 无依据的价格、路线数字和链接不会补写为事实；没有匹配结果时如实说明。
+- 助手提出的行程变更需要确认，服务端再次核对归属、版本与固定安排。
 
-代码通过 `DataGrant` 限制阶段输入，并在投递前核对受限 Agent 的实际 Session 配置。高德数字从配对的原始工具事件提取，模型总结不能充当路线事实。详情见 [百炼接入](docs/bailian-agent-setup.md) 与 [高德接入](docs/amap-mobility-setup.md)。
+详见 [系统设计](docs/architecture.md)。
 
-## 本地启动
+</details>
 
-需要 **Node.js 22+**、**pnpm 10**，以及用于真实规划的百炼与 FlyAI 配置。
+## 本地运行
+
+需要 **Node.js 22+** 和 **pnpm 10**。真实规划需配置百炼与 FlyAI；邮箱登录需配置邮件服务。WHOOP 为可选连接。
 
 ```bash
 pnpm install --frozen-lockfile
 cp .env.example .dev.vars
-# 按配置文档填写 .dev.vars 中的本地环境变量与密钥
+# 按接入文档填写本地环境变量
 pnpm exec wrangler d1 migrations apply biotrip-users --local
 pnpm dev:vinext
 ```
 
-打开 [localhost:3001](http://localhost:3001)。当前生产路径使用 **vinext + Cloudflare Workers**；项目保留 Next.js 开发脚本，Worker 绑定与后台任务请用上述路径验收。
+打开 [localhost:3001](http://localhost:3001)，从 `/app` 进入应用。独立部署时，请将 `wrangler.jsonc` 中的域名、数据库及服务标识替换为自己的配置。
 
-| 配置 | 说明 |
+| 文档 | 内容 |
 | :--- | :--- |
-| 百炼 | 标准 API Key、工作空间、各 Agent 与运行环境，见 [配置指南](docs/bailian-agent-setup.md) |
-| FlyAI | 官方 API Key、签名配置与受控旅行 Vault，见 [平台接入](docs/platform-access-checklist.md) |
-| 高德 | Web 服务 Key 只保存在百炼官方 MCP 私密配置，应用配置独立 Agent / 环境 ID |
-| 登录邮件 | 账号加密配置与 Resend，见 [邮箱登录](docs/email-auth-setup.md) |
-| WHOOP（可选） | 独立 Developer App、精确匹配的回调与服务端加密秘密 |
+| [服务接入](docs/platform-access-checklist.md) | 百炼、FlyAI、WHOOP 与账号配置 |
+| [部署指南](docs/cloudflare-deployment.md) | Worker、D1 迁移与生产环境 |
+| [百炼配置](docs/bailian-agent-setup.md) | 规划 Provider、Agent 与权限边界 |
+| [高德接入](docs/amap-mobility-setup.md) | 独立出行顾问与真实路线依据 |
+| [邮箱登录](docs/email-auth-setup.md) | 发信域名与登录邮件 |
+| [验证说明](docs/verification.md) | 检查命令、覆盖范围与已知限制 |
 
-生产密钥使用 Worker Secrets；`.dev.vars`、`.env.local`、本地数据库和验收输出均排除在 Git 之外。不要将密钥放进前端、截图、命令参数或聊天。
-
-## 验证与发布状态
-
-截至 **2026-10-23**：
-
-- **486 项本地测试通过**，包含影片范围播放、后台规划、行程约束、助手工具与反馈持久化。此徽章是本地验收记录；GitHub CI 结果请查看 [Actions](https://github.com/EazyLee30/biotrip-fliggy-hackathon/actions)。
-- **高德真实链路通过本地验收**：Session 配置 → 原始 SSE → 建议卡片 → 单条采纳 → D1 版本保存。杭州西湖至灵隐寺一次查询返回驾车约 28 分钟、5.5 公里；它是当次估算，会随路况变化。
-- **产品首页与影片已发布**到 [biotrip.eazylee.si](https://biotrip.eazylee.si)，应用入口为 [/app](https://biotrip.eazylee.si/app)，生产版本 `3d5561ef-876a-40e2-b921-b839951eb9ee`。首页发布的 35 项线上检查通过；影片支持播放和章节跳转，匿名任务接口要求登录。
-- **待继续验证**：生产环境的真实路线会诊、实体手机体验。WHOOP 应用仍为 Sandbox，可用名额以平台为准。
-
-发布与测试范围见 [部署记录](docs/cloudflare-deployment.md)、[调整续作记录](docs/adjustment-continuation.md) 和 [移动端验收](docs/mobile-acceptance.md)。
-
-## 项目地图
+<details>
+<summary><strong>项目结构与验证命令</strong></summary>
 
 ```text
-src/app/                    页面、API 与手机优先交互
-src/lib/planning/           阶段授权、顾问、事件证据与后台任务
-src/lib/adjust/             基础建议、冲突检查与行程重排
-src/workers/                Worker 入口与持久 Workflow
-migrations/                 D1 数据迁移
-public/                     字体、旅行氛围图、目的地素材
-bailian/                    FlyAI Skill 与官方接入材料
+src/app/             产品页面、API 与移动端交互
+src/lib/             规划、助手、反馈与来源核验
+src/workers/         Worker 入口与后台 Workflow
+migrations/          D1 数据迁移
+public/              应用必需素材、官网与产品影片
+bailian/             FlyAI Skill 与配置参考
+docs/                运行文档、系统设计与素材许可
 ```
 
-[项目状态](docs/project-plan.md) · [产品执行记录](docs/zen-product-execution.md) · [图片与字体来源](https://biotrip.eazylee.si/credits) · [比赛与数据边界](docs/competition-rules-and-data.md)
+```bash
+pnpm exec tsc --noEmit
+pnpm test
+pnpm lint
+pnpm run build:vinext
+```
+
+截至 2026-10-23，486 项测试及 CI 检查通过，官网发布的 35 项线上检查通过。浏览器移动端仿真与实体手机验收分别记录，详见验证说明。
+
+</details>
 
 ## 数据与素材
 
-WHOOP token 按账户加密保存，原始身体指标不写入数据库；偏好学习由 Worker 按用户自己的选择执行。公开分享单独确认，不包含日期、完整日程、健康数据或个人记忆，链接可以撤回。完整规则以 [隐私说明](https://biotrip.eazylee.si/privacy) 为准。
+WHOOP 授权信息按账户加密保存，公开分享排除健康数据与个人记忆。生产密钥保存在服务端；本地凭据、数据库、设计草稿、开发截图和视频制作工程不进入源码仓库。
 
-生成氛围图与目的地实景分别标明，照片、字体与第三方 Skill 的许可见素材回执及各自许可文件。本仓库未声明统一开源许可证。
+[隐私说明](https://biotrip.eazylee.si/privacy) · [图片与字体来源](https://biotrip.eazylee.si/credits) · [素材许可档案](docs/assets/README.md)
 
-<div align="center">
+本仓库公开源代码，未声明统一开源许可证。第三方素材与 Skill 保留各自许可。
 
-**让旅途照顾好今天的你。**
+<br />
 
-[体验 BioTrip ↗](https://biotrip.eazylee.si/app)
-
-</div>
+<p align="center">
+  <img src="public/biotrip-icon.svg" width="36" alt="BioTrip icon" /><br />
+  <sub>独立构建 · <a href="https://github.com/EazyLee30">Eazy Lee</a></sub><br /><br />
+  <strong>世界很大，按你的节奏走。</strong><br />
+  <a href="https://biotrip.eazylee.si/app">与 BioTrip 一起出发 ↗</a>
+</p>
